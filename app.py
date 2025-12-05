@@ -75,14 +75,10 @@ WORKERS = {
 
 # ------------------ PPE ITEMS ------------------
 PPE_ITEMS = [
-    "Hard Hat",
-    "Safety Vest",
-    "Gloves",
-    "Safety Boots",
-    "Eye/Face Protection",
-    "Hearing Protection",
-    "Safety Harness"
-]
+        "Hard Hat", "Safety Vest", "Gloves",
+        "Safety Boots", "Eye/Face Protection",
+        "Hearing Protection", "Safety Harness"
+    ]
 
 CLASS_TO_PPE = {
         "hardhat": "Hard Hat", "helmet": "Hard Hat",
@@ -275,3 +271,4 @@ else:
 if st.session_state.get("do_rerun", False):
     st.session_state.do_rerun = False
     st.experimental_rerun()
+
