@@ -9,3 +9,4 @@ protobuf
 pillow
 av
 python-dotenv
+plotly
