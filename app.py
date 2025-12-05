@@ -193,7 +193,7 @@ def login_page():
             if user in USER_DB and USER_DB[user] == pw:
                 st.session_state.logged_in = True
                 st.session_state.page = "workers"
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error("Invalid username or password.")
 
@@ -296,3 +296,4 @@ else:
     else:
         st.session_state.page = "workers"
         st.experimental_rerun()
+
