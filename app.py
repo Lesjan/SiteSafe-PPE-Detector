@@ -9,10 +9,10 @@ import numpy as np
 from datetime import datetime
 from ultralytics import YOLO
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoTransformerBase, RTCConfiguration
-import requests # <-- ADDED IMPORT
+import requests
 
 # ------------------------------------------------------------------------------
-# INITIALIZE SESSION STATE (CRITICAL FIX)
+# INITIALIZE SESSION STATE (CRITICAL FIX FOR AttributeError)
 # ------------------------------------------------------------------------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -44,9 +44,10 @@ USER_DB_FILE = "user_db.pkl"
 MODEL_PATH = "best.pt"
 
 # ------------------------------------------------------------------------------
-# MODEL URL (corrected with your repo)
+# MODEL DOWNLOAD LOGIC
 # ------------------------------------------------------------------------------
-MODEL_URL = "https://raw.githubusercontent.com/lesjan/SiteSafe-PPE-Detector/main/best.pt"
+# NOTE: Update this URL to point to your live raw GitHub model if MODEL_PATH isn't included in the repo
+MODEL_URL = "https://raw.githubusercontent.com/lesjan/SiteSafe-PPE-Detector/main/best.pt" 
 
 
 def download_model():
@@ -65,7 +66,6 @@ def download_model():
             with open(MODEL_PATH, "wb") as f:
                 f.write(r.content)
 
-            # Verify size
             if os.path.getsize(MODEL_PATH) < 1000000:
                 raise ValueError("Downloaded model appears corrupted.")
         else:
@@ -76,7 +76,6 @@ def download_model():
         print(f"Model download failed: {e}")
         if os.path.exists(MODEL_PATH):
             os.remove(MODEL_PATH)
-        # st.warning will be called in load_model if it fails
 
 
 # ------------------------------------------------------------------------------
@@ -84,8 +83,8 @@ def download_model():
 # ------------------------------------------------------------------------------
 @st.cache_resource
 def load_model():
-    # Only call download on the cloud, not during every rerun attempt
-    if os.getenv('STREAMLIT_SERVER_URL'): 
+    # Only call download if model is not present, usually only on cloud deployment
+    if not os.path.exists(MODEL_PATH):
         download_model()
 
     if os.path.exists(MODEL_PATH):
@@ -225,7 +224,7 @@ class PPEVideoTransformer(VideoTransformerBase):
         img = frame.to_ndarray(format="bgr24")
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        # Run detection aggressively every 3rd frame, relying on fast UI update
+        # Run detection aggressively every 3rd frame
         if self.frame_counter % 3 == 0:
             try:
                 raw_detect, annotated = self.run_yolo(rgb)
@@ -240,15 +239,16 @@ class PPEVideoTransformer(VideoTransformerBase):
             if stable_detect != st.session_state.detected_live_ppe:
                 st.session_state.detected_live_ppe = stable_detect
                 st.session_state.last_update = time.time()
-                st.session_state.force_rerun = True # Signal UI to update
+                # Do NOT force rerun here. Let the dedicated renderer handle it.
             
             # --- Auto-Log Logic (Added for stability) ---
             if time.time() - st.session_state.last_update > 5:
                 # Log compliance every 5 seconds if no change, or if a change occurred
                 log_inspection(self.worker_id, self.worker_name, stable_detect)
                 st.session_state.log_message = f"Status logged at {datetime.now().strftime('%H:%M:%S')}."
-                st.session_state.last_update = time.time()
-                st.session_state.force_rerun = True
+                st.session_state.last_update = time.time() # Reset timer
+                # We signal rerun here so the user sees the Log confirmation
+                st.session_state.force_rerun = True 
 
 
         else:
@@ -258,6 +258,43 @@ class PPEVideoTransformer(VideoTransformerBase):
         self.frame_counter += 1
         return cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
 
+# ------------------------------------------------------------------------------
+# CHECKLIST RENDERER (Aggressive UI Fix)
+# ------------------------------------------------------------------------------
+def render_checklist_live():
+    
+    # This loop forces the UI to update the placeholders constantly.
+    # It must be the last thing called in the status_col.
+    while True:
+        detected = st.session_state.get("detected_live_ppe", set())
+        missing = [it for it in PPE_ITEMS if it not in detected]
+        
+        # --- CHECKLIST RENDERING ---
+        checklist = ""
+        for it in PPE_ITEMS:
+            if it in detected:
+                checklist += f"<span style='color:green'>✔ **{it}**</span><br>"
+            else:
+                checklist += f"<span style='color:red'>❌ **{it}**</span><br>"
+
+        st.markdown(checklist, unsafe_allow_html=True)
+        
+        # --- Status Rendering ---
+        if not detected and st.session_state.get("last_update") == 0:
+             st.info("Click 'Start Scanner' to begin scanning.")
+        elif not missing:
+            st.success("✅ FULLY COMPLIANT")
+        else:
+            st.error("🚨 NON-COMPLIANT")
+            st.warning(f"Missing: {', '.join(missing)}")
+            
+        # Log Message Display
+        if st.session_state.get("log_message"):
+            st.info(st.session_state.log_message)
+
+        # CRITICAL: Sleep briefly to yield CPU time, but keep looping aggressively.
+        time.sleep(0.01) 
+        
 # ------------------------------------------------------------------------------
 # LOGIN PAGE
 # ------------------------------------------------------------------------------
@@ -324,7 +361,7 @@ def worker_page():
         st.rerun()
 
 # ------------------------------------------------------------------------------
-# SCANNER PAGE
+# SCANNER PAGE (FINAL FIX)
 # ------------------------------------------------------------------------------
 def scanner_page():
     st.title("📹 PPE Live Scanner")
@@ -352,41 +389,16 @@ def scanner_page():
             async_transform=True,
         )
 
-    # --- CRITICAL UI UPDATE CHECK (Aggressive Rerun) ---
-    # We use a slight time.sleep here to prevent instant recursion on fast PCs
-    # and then rely on the force_rerun flag set by the background thread.
-    if st.session_state.get("force_rerun", False):
-        st.session_state.force_rerun = False
-        time.sleep(0.01) # Short delay to prevent crash
+    # --- RERUN LOGIC: ONLY RERUN IF SIGNALED BY TRANSFORMER ---
+    # This block is needed only for the log message to appear instantly.
+    if st.session_state.get("force_rerun"):
+        st.session_state.force_rerun = False 
         st.rerun()
 
     with status_col:
-        st.markdown("### 📋 PPE Checklist")
-
-        detected = st.session_state.get("detected_live_ppe", set())
-        
-        missing = [it for it in PPE_ITEMS if it not in detected]
-
-        checklist = ""
-        for it in PPE_ITEMS:
-            if it in detected:
-                checklist += f"<span style='color:green'>✔ **{it}**</span><br>"
-            else:
-                checklist += f"<span style='color:red'>❌ **{it}**</span><br>"
-
-        st.markdown(checklist, unsafe_allow_html=True)
-
-        if not detected and st.session_state.get("last_update") == 0:
-            st.info("Click 'Start Scanner' to begin scanning.")
-        elif not missing:
-            st.success("✅ FULLY COMPLIANT")
-        else:
-            st.error("🚨 NON-COMPLIANT")
-            st.warning(f"Missing: {', '.join(missing)}")
-            
-        # Display log status
-        if st.session_state.get("log_message"):
-            st.info(st.session_state.log_message)
+        # --- CRITICAL FIX: AGGRESSIVELY RENDER CHECKLIST ---
+        # This function runs an aggressive while True loop to update the checklist instantly.
+        render_checklist_live() 
 
 
 # ------------------------------------------------------------------------------
@@ -397,9 +409,8 @@ def set_page(p):
     st.rerun()
 
 # ------------------------------------------------------------------------------
-# MAIN APP
+# MAIN APP EXECUTION BLOCK
 # ------------------------------------------------------------------------------
-# The main execution block is placed last for structural stability.
 if not st.session_state.logged_in:
     login_page()
 else:
