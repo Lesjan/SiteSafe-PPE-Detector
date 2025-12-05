@@ -64,6 +64,32 @@ def simulated_detect(frame):
         if random.random() > 0.9: present.add("Hearing Protection")
         if random.random() > 0.95: present.add("Safety Harness")
         return present
+    def detect_ppe(frame):
+        if USE_SIMULATED or model is None:
+            return simulated_detect(frame)
+
+        detected = set()
+        try:
+            # OPTIMIZATION: Explicitly set device='cpu' for packaged apps
+            results = model(
+                frame, 
+                device='cpu', 
+                imgsz=640, 
+                conf=0.5 # Confidence threshold for reliable detection
+            )[0]
+            
+            names = model.names if hasattr(model, "names") else {}
+            for box in results.boxes:
+                try:
+                    cls_id = int(box.cls)
+                    label = names.get(cls_id, str(cls_id)).lower()
+                except Exception:
+                    label = str(box.cls)
+                if label in CLASS_TO_PPE:
+                    detected.add(CLASS_TO_PPE[label])
+        except Exception as e:
+            return simulated_detect(frame)
+        return detected
 
 # ----- Download model if needed -----
 def download_model():
@@ -376,5 +402,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
