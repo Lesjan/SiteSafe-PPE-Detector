@@ -1,4 +1,3 @@
-
 import streamlit as st
 import cv2
 import time
@@ -167,6 +166,7 @@ class PPEVideoTransformer(VideoTransformerBase):
                 detected.add(CLASS_TO_PPE[label])
         return detected, annotated
 
+    # *** FIX APPLIED HERE ***
     def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -175,9 +175,15 @@ class PPEVideoTransformer(VideoTransformerBase):
         except Exception as e:
             raw_detect, annotated = set(), rgb
 
-        stable_detect = self.smooth(raw_detect)
-        st.session_state.detected_live_ppe = stable_detect
+        # The issue was likely due to the strict smoothing logic or a delay.
+        # Temporarily bypass smoothing to show immediate detection feedback.
+        # stable_detect = self.smooth(raw_detect)
+        # st.session_state.detected_live_ppe = stable_detect
+
+        st.session_state.detected_live_ppe = raw_detect
+        
         return cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
+    # ************************
 
 # ----- Pages -----
 
@@ -367,11 +373,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
