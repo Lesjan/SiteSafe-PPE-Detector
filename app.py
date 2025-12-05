@@ -230,12 +230,14 @@ def login_page():
 
     tab1, tab2 = st.tabs(["Sign In", "Sign Up"])
 
-    # Sign In
+    # -----------------------
+    # SIGN IN TAB
+    # -----------------------
     with tab1:
-        user = st.text_input("Username")
-        pw = st.text_input("Password", type="password")  # FIXED
+        user = st.text_input("Username", key="login_user")
+        pw = st.text_input("Password", type="password", key="login_pw")
 
-        if st.button("Login"):
+        if st.button("Login", key="login_btn"):
             if user in USER_DB and USER_DB[user] == pw:
                 st.session_state.logged_in = True
                 st.session_state.page = "workers"
@@ -243,13 +245,15 @@ def login_page():
             else:
                 st.error("Invalid username or password.")
 
-    # Sign Up
+    # -----------------------
+    # SIGN UP TAB
+    # -----------------------
     with tab2:
-        new_user = st.text_input("New Username")
-        new_pw = st.text_input("Password", type="password")
-        confirm = st.text_input("Confirm Password", type="password")
+        new_user = st.text_input("New Username", key="signup_user")
+        new_pw = st.text_input("New Password", type="password", key="signup_pw")
+        confirm = st.text_input("Confirm Password", type="password", key="signup_pw_confirm")
 
-        if st.button("Create Account"):
+        if st.button("Create Account", key="signup_btn"):
             if not new_user or not new_pw:
                 st.error("Fields cannot be empty.")
             elif new_user in USER_DB:
@@ -362,3 +366,4 @@ else:
     else:
         st.session_state.page = "workers"
         st.rerun()
+
