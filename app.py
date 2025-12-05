@@ -65,7 +65,7 @@ def simulated_detect(frame):
         if random.random() > 0.95: present.add("Safety Harness")
         return present
 
-hecklist_text = "### 📋 PPE Checklist\n"
+Checklist_text = "### 📋 PPE Checklist\n"
                     for it in PPE_ITEMS:
                         # Displaying items in a compact, clear list
                         if it in detected:
@@ -396,6 +396,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
