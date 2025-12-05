@@ -266,7 +266,7 @@ def scanner_page():
 
     with status_col:
         st.markdown("### 📋 PPE Checklist")
-        detected = st.session_state.get("detected_live_ppe", set())
+        detected = st.session_state.get("detected_ppe", set())
         missing = [it for it in PPE_ITEMS if it not in detected]
 
         checklist = ""
@@ -385,4 +385,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
