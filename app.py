@@ -115,17 +115,13 @@ PPE_ITEMS = [
 ]
 
 CLASS_TO_PPE = {
-    "Hardhat": "Hard Hat",
-    "helmet": "Hard Hat",
-    "vest": "Safety Vest",
-    "glove": "Gloves",
-    "boot": "Safety Boots",
-    "boots": "Safety Boots",
-    "goggles": "Eye/Face Protection",
-    "mask": "Eye/Face Protection",
-    "earmuff": "Hearing Protection",
-    "ear_protection": "Hearing Protection",
-    "harness": "Safety Harness",
+    "hardhat": "Hard Hat", "helmet": "Hard Hat",
+        "vest": "Safety Vest", "glove": "Gloves",
+        "boot": "Safety Boots", "boots": "Safety Boots",
+        "goggles": "Eye/Face Protection", "mask": "Eye/Face Protection",
+        "earmuff": "Hearing Protection", "ear_protection": "Hearing Protection",
+        "harness": "Safety Harness"
+    }
 }
 
 # ------------------------------------------------------------------------------
@@ -369,4 +365,5 @@ else:
     else:
         st.session_state.page = "workers"
         st.experimental_rerun()
+
 
