@@ -321,11 +321,9 @@ def scanner_page():
         )
     
     # --- RERUN LOOP ---
-    # Fix: Replaced st.experimental_rerun() with the correct st.rerun()
-    # This loop forces the script to rerun every second when the stream is playing, 
-    # ensuring the checklist immediately reflects the updated st.session_state.
+    # Fix: Optimized sleep time to 0.1s and uses the correct st.rerun() command.
     if webrtc_ctx.state.playing:
-        time.sleep(1) 
+        time.sleep(0.1) 
         st.rerun() 
 
     with status_col:
