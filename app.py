@@ -184,8 +184,9 @@ class PPEVideoTransformer(VideoTransformerBase):
         except Exception as e:
             raw_detect, annotated = set(), rgb
 
-        stable_detect = self.smooth(raw_detect)
-        st.session_state.detected_live_ppe = stable_detect
+        # Using raw_detect for immediate feedback (smoothing is bypassed/removed)
+        st.session_state.detected_live_ppe = raw_detect
+        
         return cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
 
 # ----- Pages -----
@@ -376,6 +377,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
