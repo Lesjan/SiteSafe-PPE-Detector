@@ -9,25 +9,7 @@ import numpy as np
 from datetime import datetime
 from ultralytics import YOLO
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoTransformerBase, RTCConfiguration
-
-# ------------------------------------------------------------------------------
-# INITIALIZE SESSION STATE (CRITICAL FIX FOR AttributeError)
-# ------------------------------------------------------------------------------
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-if "page" not in st.session_state:
-    st.session_state.page = "login"
-if "worker_id" not in st.session_state:
-    st.session_state.worker_id = None
-if "worker_name" not in st.session_state:
-    st.session_state.worker_name = None
-if "detected_live_ppe" not in st.session_state:
-    st.session_state.detected_live_ppe = set()
-if "last_update" not in st.session_state:
-    st.session_state.last_update = 0
-if "force_rerun" not in st.session_state:
-    st.session_state.force_rerun = False
-
+import requests
 
 # ------------------------------------------------------------------------------
 # PAGE SETUP
@@ -43,13 +25,55 @@ USER_DB_FILE = "user_db.pkl"
 MODEL_PATH = "best.pt"
 
 # ------------------------------------------------------------------------------
+# OPTION 2 — MODEL DOWNLOAD FROM GITHUB RAW
+# ------------------------------------------------------------------------------
+MODEL_URL = "https://raw.githubusercontent.com/<YOUR_USERNAME>/<YOUR_REPO>/<YOUR_BRANCH>/best.pt"
+
+
+def download_model():
+    """Download best.pt safely from GitHub RAW."""
+    if os.path.exists(MODEL_PATH):
+        if os.path.getsize(MODEL_PATH) < 1000000:  # <1MB == corrupted
+            os.remove(MODEL_PATH)
+        else:
+            return
+
+    try:
+        st.info("Downloading PPE model... please wait (one-time download).")
+        r = requests.get(MODEL_URL, timeout=30)
+
+        if r.status_code == 200:
+            with open(MODEL_PATH, "wb") as f:
+                f.write(r.content)
+
+            # Verify size
+            if os.path.getsize(MODEL_PATH) < 1000000:
+                raise ValueError("Downloaded model appears corrupted.")
+        else:
+            raise RuntimeError(f"HTTP {r.status_code}")
+
+    except Exception as e:
+        st.warning(f"⚠ Model download failed: {e}. Falling back to YOLOv8n.")
+        if os.path.exists(MODEL_PATH):
+            os.remove(MODEL_PATH)
+
+
+# ------------------------------------------------------------------------------
 # YOLO MODEL (CACHED)
 # ------------------------------------------------------------------------------
 @st.cache_resource
 def load_model():
+    download_model()
+
     if os.path.exists(MODEL_PATH):
-        return YOLO(MODEL_PATH)
+        try:
+            return YOLO(MODEL_PATH)
+        except Exception as e:
+            st.warning(f"⚠ Failed to load best.pt ({e}). Using YOLOv8n.")
+            return YOLO("yolov8n.pt")
+
     return YOLO("yolov8n.pt")
+
 
 model = load_model()
 
@@ -65,9 +89,11 @@ def load_user_db():
             return {"admin": "12345"}
     return {"admin": "12345"}
 
+
 def save_user_db(data):
     with open(USER_DB_FILE, "wb") as f:
         pickle.dump(data, f)
+
 
 USER_DB = load_user_db()
 
@@ -117,7 +143,9 @@ def init_log_file():
         df = pd.DataFrame(columns=["timestamp", "worker_id", "worker_name"] + PPE_ITEMS)
         df.to_csv(LOG_FILE, index=False)
 
+
 init_log_file()
+
 
 def log_inspection(worker_id, worker_name, detected):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -130,7 +158,7 @@ def log_inspection(worker_id, worker_name, detected):
     df.to_csv(LOG_FILE, index=False)
 
 # ------------------------------------------------------------------------------
-# VIDEO TRANSFORMER (STABLE, SMOOTHED)
+# VIDEO TRANSFORMER
 # ------------------------------------------------------------------------------
 class PPEVideoTransformer(VideoTransformerBase):
     def __init__(self, worker_id, worker_name):
@@ -143,28 +171,25 @@ class PPEVideoTransformer(VideoTransformerBase):
         self.HISTORY = 7
         self.frame_counter = 0
 
-        # Initialize shared state
         st.session_state.detected_live_ppe = set()
         st.session_state.last_update = time.time()
-        st.session_state.force_rerun = False # Signal for UI update
+        st.session_state.force_rerun = False
 
     def smooth(self, detected):
-        """Temporal Smoothing - reduces flicker."""
         self.smoothing_history.append(detected)
         if len(self.smoothing_history) > self.HISTORY:
             self.smoothing_history.pop(0)
 
         smoothed = set()
         for it in PPE_ITEMS:
-            present_count = sum(1 for hist in self.smoothing_history if it in hist)
-            if present_count > self.HISTORY // 2:
+            cnt = sum(1 for h in self.smoothing_history if it in h)
+            if cnt > self.HISTORY // 2:
                 smoothed.add(it)
 
         return smoothed
 
     def run_yolo(self, frame):
         detected = set()
-        # Using low confidence (0.35) for detection stability on cloud CPU
         result = self.model(frame, conf=0.35, verbose=False)[0]
         annotated = result.plot()
 
@@ -179,29 +204,23 @@ class PPEVideoTransformer(VideoTransformerBase):
     def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        
-        # --- PERFORMANCE OPTIMIZATION: Process only every 30th frame ---
-        if self.frame_counter % 30 == 0:
+
+        if self.frame_counter % 5 == 0:
             try:
                 raw_detect, annotated = self.run_yolo(rgb)
             except:
                 raw_detect, annotated = set(), rgb
 
-            stable_detect = self.smooth(raw_detect)
-            
-            # --- CRITICAL UI UPDATE SIGNAL ---
-            # If detection results change, update session state and signal UI rerun
-            if stable_detect != st.session_state.detected_live_ppe:
-                st.session_state.detected_live_ppe = stable_detect
-                st.session_state.last_update = time.time()
-                st.session_state.force_rerun = True # Trigger the main script to update
+            stable = self.smooth(raw_detect)
 
+            if stable != st.session_state.detected_live_ppe:
+                st.session_state.detected_live_ppe = stable
+                st.session_state.force_rerun = True
         else:
-            # If not running YOLO, just pass the frame through
             annotated = rgb
-        
+
         self.frame_counter += 1
-        return cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR) # Must return BGR for webrtc
+        return cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
 
 # ------------------------------------------------------------------------------
 # LOGIN PAGE
@@ -211,11 +230,10 @@ def login_page():
 
     tab1, tab2 = st.tabs(["Sign In", "Sign Up"])
 
-    # --- Sign In ---
+    # Sign In
     with tab1:
-        # Note: st.password_input is now safe due to Session State initialization
         user = st.text_input("Username")
-        pw = st.password_input("Password")
+        pw = st.text_input("Password", type="password")  # FIXED
 
         if st.button("Login"):
             if user in USER_DB and USER_DB[user] == pw:
@@ -225,7 +243,7 @@ def login_page():
             else:
                 st.error("Invalid username or password.")
 
-    # --- Sign Up ---
+    # Sign Up
     with tab2:
         new_user = st.text_input("New Username")
         new_pw = st.text_input("Password", type="password")
@@ -266,7 +284,7 @@ def worker_page():
         st.rerun()
 
 # ------------------------------------------------------------------------------
-# SCANNER PAGE (LIVE CAMERA)
+# SCANNER PAGE
 # ------------------------------------------------------------------------------
 def scanner_page():
     st.title("📹 PPE Live Scanner")
@@ -287,23 +305,17 @@ def scanner_page():
             rtc_configuration=RTCConfiguration(
                 {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
             ),
-            video_transformer_factory=lambda: PPEVideoTransformer(
-                worker_id=wid,
-                worker_name=wname
-            ),
+            video_transformer_factory=lambda: PPEVideoTransformer(wid, wname),
             async_transform=True,
         )
 
-    # --- CRITICAL UI UPDATE CHECK ---
-    # Check if the transformer signaled a detection change, then force rerun.
     if st.session_state.get("force_rerun"):
-        st.session_state.force_rerun = False # Reset the flag
+        st.session_state.force_rerun = False
         st.rerun()
 
     with status_col:
         st.markdown("### 📋 PPE Checklist")
-        
-        # --- CHECKLIST RENDERING ---
+
         detected = st.session_state.get("detected_live_ppe", set())
         missing = [it for it in PPE_ITEMS if it not in detected]
 
@@ -316,14 +328,13 @@ def scanner_page():
 
         st.markdown(checklist, unsafe_allow_html=True)
 
-        if not detected and st.session_state.get("last_update") == 0:
-             st.info("Click 'Start' below the video frame to begin scanning.")
+        if not detected:
+            st.info("Click 'Start' below the video frame to begin scanning.")
         elif not missing:
             st.success("✅ FULLY COMPLIANT")
         else:
             st.error("🚨 NON-COMPLIANT")
             st.warning(f"Missing: {', '.join(missing)}")
-
 
 # ------------------------------------------------------------------------------
 # Helper
@@ -335,6 +346,12 @@ def set_page(p):
 # ------------------------------------------------------------------------------
 # MAIN APP
 # ------------------------------------------------------------------------------
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if "page" not in st.session_state:
+    st.session_state.page = "login"
+
 if not st.session_state.logged_in:
     login_page()
 else:
