@@ -14,7 +14,7 @@ from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoTransformerBase, 
 # PAGE SETUP
 # ------------------------------------------------------------------------------
 st.set_page_config(
-    page_title="SiteSafe PPE Detector",
+    page_title="SiteSafe PPE Detector (Final Stable)",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -28,6 +28,7 @@ MODEL_PATH = "best.pt"
 # ------------------------------------------------------------------------------
 @st.cache_resource
 def load_model():
+    # Model logic is already correctly integrated here
     if os.path.exists(MODEL_PATH):
         return YOLO(MODEL_PATH)
     return YOLO("yolov8n.pt")
@@ -122,9 +123,12 @@ class PPEVideoTransformer(VideoTransformerBase):
 
         self.smoothing_history = []
         self.HISTORY = 7
+        self.frame_counter = 0
 
         # Initialize shared state
         st.session_state.detected_live_ppe = set()
+        st.session_state.last_update = time.time()
+        st.session_state.force_rerun = False # Signal for UI update
 
     def smooth(self, detected):
         """Temporal Smoothing - reduces flicker."""
@@ -142,6 +146,7 @@ class PPEVideoTransformer(VideoTransformerBase):
 
     def run_yolo(self, frame):
         detected = set()
+        # Using low confidence (0.35) for better detection stability on cloud CPU
         result = self.model(frame, conf=0.35, verbose=False)[0]
         annotated = result.plot()
 
@@ -156,19 +161,29 @@ class PPEVideoTransformer(VideoTransformerBase):
     def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        
+        # Only run YOLO on a fraction of frames (1 out of 5) to save CPU
+        if self.frame_counter % 5 == 0:
+            try:
+                raw_detect, annotated = self.run_yolo(rgb)
+            except:
+                raw_detect, annotated = set(), rgb
 
-        try:
-            raw_detect, annotated = self.run_yolo(rgb)
-        except:
-            raw_detect, annotated = set(), img
+            stable_detect = self.smooth(raw_detect)
+            
+            # --- CRITICAL UI UPDATE SIGNAL ---
+            # If detection results change, update session state and signal UI rerun
+            if stable_detect != st.session_state.detected_live_ppe:
+                st.session_state.detected_live_ppe = stable_detect
+                st.session_state.last_update = time.time()
+                st.session_state.force_rerun = True # Trigger the main script to update
 
-        stable_detect = self.smooth(raw_detect)
-
-        # update global state
-        st.session_state.detected_live_ppe = stable_detect
-        st.session_state.last_update = time.time()
-
-        return annotated
+        else:
+            # If not running YOLO, just pass the frame through
+            annotated = rgb
+        
+        self.frame_counter += 1
+        return cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR) # Must return BGR for webrtc
 
 # ------------------------------------------------------------------------------
 # LOGIN PAGE
@@ -260,31 +275,37 @@ def scanner_page():
             async_transform=True,
         )
 
+    # --- CRITICAL UI UPDATE CHECK ---
+    # Check if the transformer signaled a detection change, then force rerun.
+    if st.session_state.get("force_rerun"):
+        st.session_state.force_rerun = False # Reset the flag
+        st.rerun()
+
     with status_col:
         st.markdown("### 📋 PPE Checklist")
-        placeholder = st.empty()
+        
+        # --- CHECKLIST RENDERING ---
+        # Get the latest stable detection results
+        detected = st.session_state.get("detected_live_ppe", set())
+        missing = [it for it in PPE_ITEMS if it not in detected]
 
-        while True:
-            if "last_update" in st.session_state:
-                detected = st.session_state.get("detected_live_ppe", set())
-                missing = [it for it in PPE_ITEMS if it not in detected]
+        checklist = ""
+        for it in PPE_ITEMS:
+            if it in detected:
+                checklist += f"<span style='color:green'>✔ **{it}**</span><br>"
+            else:
+                checklist += f"<span style='color:red'>❌ **{it}**</span><br>"
 
-                checklist = ""
-                for it in PPE_ITEMS:
-                    if it in detected:
-                        checklist += f"<span style='color:green'>✔ {it}</span><br>"
-                    else:
-                        checklist += f"<span style='color:red'>❌ {it}</span><br>"
+        st.markdown(checklist, unsafe_allow_html=True)
 
-                placeholder.markdown(checklist, unsafe_allow_html=True)
+        if not detected:
+             st.info("Click 'Start' below the video frame to begin scanning.")
+        elif not missing:
+            st.success("✅ FULLY COMPLIANT")
+        else:
+            st.error("🚨 NON-COMPLIANT")
+            st.warning(f"Missing: {', '.join(missing)}")
 
-                if not missing:
-                    st.success("✅ FULLY COMPLIANT")
-                else:
-                    st.error("🚨 NON-COMPLIANT")
-                    st.warning(f"Missing: {', '.join(missing)}")
-
-            time.sleep(0.1)
 
 # ------------------------------------------------------------------------------
 # Helper
