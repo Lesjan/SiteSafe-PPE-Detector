@@ -53,37 +53,7 @@ WORKERS = {
     "CW03": "Shine Acuña",
     "CW04": "Justin Baculio",
     "CW05": "Alexis Anne Emata",
-}
-def simulated_detect(frame):
-        present = set()
-        if random.random() > 0.2: present.add("Hard Hat")
-        if random.random() > 0.3: present.add("Safety Vest")
-        if random.random() > 0.6: present.add("Gloves")
-        if random.random() > 0.5: present.add("Safety Boots")
-        if random.random() > 0.8: present.add("Eye/Face Protection")
-        if random.random() > 0.9: present.add("Hearing Protection")
-        if random.random() > 0.95: present.add("Safety Harness")
-        return present
-
-Checklist_text = "### 📋 PPE Checklist\n"
-                    for it in PPE_ITEMS:
-                        # Displaying items in a compact, clear list
-                        if it in detected:
-                            checklist_text += f"**<span style='color:green'>✔ {it}</span>**\n"
-                        else:
-                            checklist_text += f"**<span style='color:red'>❌ {it}</span>**\n"
-                    
-                    checklist_placeholder.markdown(checklist_text, unsafe_allow_html=True)
-                    
-                    # --- UI Update (Status) ---
-                    if not missing:
-                        status_placeholder.success("✅ **FULLY COMPLIANT**")
-                        warning_placeholder.empty()
-                    else:
-                        status_placeholder.error("🚨 **NON-COMPLIANT**")
-                        warning_placeholder.warning(f"Missing: {', '.join(missing)}")
-
-   
+}   
 
 # ----- Download model if needed -----
 def download_model():
@@ -396,6 +366,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
