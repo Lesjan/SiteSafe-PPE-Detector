@@ -1,3 +1,4 @@
+
 import streamlit as st
 import cv2
 import time
@@ -216,7 +217,7 @@ def worker_page():
     st.title("👷 Select Worker for PPE Inspection")
     worker_id = st.selectbox("Worker ID", list(WORKERS.keys()))
     worker_name = WORKERS[worker_id]
-    st.write(f"Selected: *{worker_name}*")
+    st.write(f"Selected: **{worker_name}**")
     if st.button("Start Scanner"):
         st.session_state.worker_id = worker_id
         st.session_state.worker_name = worker_name
@@ -233,7 +234,7 @@ def scanner_page():
     wid = st.session_state.worker_id
     wname = st.session_state.worker_name
 
-    st.subheader(f"Worker: *{wname} ({wid})*")
+    st.subheader(f"Worker: **{wname} ({wid})**")
 
     video_col, status_col = st.columns([2,1])
     with video_col:
@@ -282,8 +283,8 @@ def dashboard_page():
     df = pd.read_csv(LOG_FILE)
     violations_df = pd.read_csv(VIOLATION_LOG)
 
-    st.markdown(f"*Total Inspections:* {len(df)}")
-    st.markdown(f"*Total Violations:* {len(violations_df)}")
+    st.markdown(f"**Total Inspections:** {len(df)}")
+    st.markdown(f"**Total Violations:** {len(violations_df)}")
 
     # PPE missed counts
     missed_counts = {item: (df[item] == 0).sum() for item in PPE_ITEMS}
@@ -364,5 +365,11 @@ def main():
             st.session_state.page = "Dashboard"
             dashboard_page()
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     main()
+
+
+
+
+
+
