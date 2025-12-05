@@ -130,7 +130,14 @@ def load_model():
     download_model()
     try:
         if os.path.exists(MODEL_PATH):
-            return YOLO(MODEL_PATH)
+            m = YOLO(MODEL_PATH)
+            # Print all class names for debugging
+            print("=" * 50)
+            print("MODEL CLASS NAMES:")
+            for idx, name in m.names.items():
+                print(f"  {idx}: '{name}'")
+            print("=" * 50)
+            return m
         else:
             return YOLO("yolov8n.pt")
     except:
