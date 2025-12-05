@@ -11,6 +11,25 @@ from ultralytics import YOLO
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoTransformerBase, RTCConfiguration
 
 # ------------------------------------------------------------------------------
+# INITIALIZE SESSION STATE (CRITICAL FIX FOR AttributeError)
+# ------------------------------------------------------------------------------
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "page" not in st.session_state:
+    st.session_state.page = "login"
+if "worker_id" not in st.session_state:
+    st.session_state.worker_id = None
+if "worker_name" not in st.session_state:
+    st.session_state.worker_name = None
+if "detected_live_ppe" not in st.session_state:
+    st.session_state.detected_live_ppe = set()
+if "last_update" not in st.session_state:
+    st.session_state.last_update = 0
+if "force_rerun" not in st.session_state:
+    st.session_state.force_rerun = False
+
+
+# ------------------------------------------------------------------------------
 # PAGE SETUP
 # ------------------------------------------------------------------------------
 st.set_page_config(
@@ -28,7 +47,6 @@ MODEL_PATH = "best.pt"
 # ------------------------------------------------------------------------------
 @st.cache_resource
 def load_model():
-    # Model logic is already correctly integrated here
     if os.path.exists(MODEL_PATH):
         return YOLO(MODEL_PATH)
     return YOLO("yolov8n.pt")
@@ -146,7 +164,7 @@ class PPEVideoTransformer(VideoTransformerBase):
 
     def run_yolo(self, frame):
         detected = set()
-        # Using low confidence (0.35) for better detection stability on cloud CPU
+        # Using low confidence (0.35) for detection stability on cloud CPU
         result = self.model(frame, conf=0.35, verbose=False)[0]
         annotated = result.plot()
 
@@ -162,8 +180,8 @@ class PPEVideoTransformer(VideoTransformerBase):
         img = frame.to_ndarray(format="bgr24")
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         
-        # Only run YOLO on a fraction of frames (1 out of 5) to save CPU
-        if self.frame_counter % 5 == 0:
+        # --- PERFORMANCE OPTIMIZATION: Process only every 30th frame ---
+        if self.frame_counter % 30 == 0:
             try:
                 raw_detect, annotated = self.run_yolo(rgb)
             except:
@@ -195,6 +213,7 @@ def login_page():
 
     # --- Sign In ---
     with tab1:
+        # Note: st.password_input is now safe due to Session State initialization
         user = st.text_input("Username")
         pw = st.password_input("Password")
 
@@ -285,7 +304,6 @@ def scanner_page():
         st.markdown("### 📋 PPE Checklist")
         
         # --- CHECKLIST RENDERING ---
-        # Get the latest stable detection results
         detected = st.session_state.get("detected_live_ppe", set())
         missing = [it for it in PPE_ITEMS if it not in detected]
 
@@ -298,7 +316,7 @@ def scanner_page():
 
         st.markdown(checklist, unsafe_allow_html=True)
 
-        if not detected:
+        if not detected and st.session_state.get("last_update") == 0:
              st.info("Click 'Start' below the video frame to begin scanning.")
         elif not missing:
             st.success("✅ FULLY COMPLIANT")
@@ -317,12 +335,6 @@ def set_page(p):
 # ------------------------------------------------------------------------------
 # MAIN APP
 # ------------------------------------------------------------------------------
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-
-if "page" not in st.session_state:
-    st.session_state.page = "login"
-
 if not st.session_state.logged_in:
     login_page()
 else:
