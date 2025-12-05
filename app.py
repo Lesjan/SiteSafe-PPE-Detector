@@ -279,5 +279,6 @@ else:
 
 if st.session_state.get("do_rerun", False):
     st.session_state.do_rerun = False
-    st.experimental_rerun()
+    st.rerun()
+
 
