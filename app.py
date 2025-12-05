@@ -162,7 +162,7 @@ class PPEVideoTransformer(VideoTransformerBase):
         annotated = result.plot()
         for box in result.boxes:
             cls = int(box.cls)
-            label = self.names.get(cls, "").lower()
+            label = self.names.get(cls, "")
             if label in CLASS_TO_PPE:
                 detected.add(CLASS_TO_PPE[label])
         return detected, annotated
@@ -367,6 +367,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
