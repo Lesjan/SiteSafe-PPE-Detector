@@ -6,10 +6,9 @@ import pickle
 import pandas as pd
 from datetime import datetime
 from ultralytics import YOLO
-# *** UPDATED IMPORTS ***
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoProcessorBase, RTCConfiguration
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoProcessorBase, RTCConfiguration # Updated import
 import requests
-import av # Added required import for recv()
+import av # Required for VideoProcessorBase and recv()
 
 # Optional imports for dashboard
 try:
@@ -135,7 +134,7 @@ def log_violation(worker_id, worker_name, missing_ppe):
     df.to_csv(VIOLATION_LOG, index=False)
 
 # ----- Video Processor -----
-class PPEVideoTransformer(VideoProcessorBase): # Changed to VideoProcessorBase
+class PPEVideoTransformer(VideoProcessorBase): 
     def __init__(self, worker_id, worker_name):
         self.worker_id = worker_id
         self.worker_name = worker_name
@@ -148,7 +147,6 @@ class PPEVideoTransformer(VideoProcessorBase): # Changed to VideoProcessorBase
             st.session_state.detected_live_ppe = set()
 
     def smooth(self, detected):
-        # ... (unchanged smoothing logic)
         self.smoothing_history.append(detected)
         if len(self.smoothing_history) > self.HISTORY:
             self.smoothing_history.pop(0)
@@ -166,21 +164,23 @@ class PPEVideoTransformer(VideoProcessorBase): # Changed to VideoProcessorBase
         for box in result.boxes:
             cls = int(box.cls)
             
-            # Applying robust cleanup: trim whitespace and convert to lowercase
+            # Get raw label and clean it immediately (strip whitespace and convert to lowercase)
             raw_label = self.names.get(cls, "")
-            label = raw_label.strip().lower() 
+            cleaned_label = raw_label.strip().lower() 
             
-            # Targeted Fix/Robust check for Hard Hat using string containment
-            if "hardhat" in label:
+            # *** TARGETED HARD HAT FIX ***
+            # Use string containment check for hardhat/helmet to bypass any subtle mismatch
+            if "hardhat" in cleaned_label or "helmet" in cleaned_label:
                 detected.add("Hard Hat")
             
-            # Standard process for other items
-            elif label in CLASS_TO_PPE:
-                detected.add(CLASS_TO_PPE[label])
-            
+            # Standard process for all other items/aliases
+            elif cleaned_label in CLASS_TO_PPE:
+                detected.add(CLASS_TO_PPE[cleaned_label])
+
         return detected, annotated
 
-    def recv(self, frame: av.VideoFrame) -> av.VideoFrame: # Changed to recv() and added return type
+    # Using the required recv() method
+    def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
         img = frame.to_ndarray(format="bgr24")
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         try:
@@ -188,7 +188,7 @@ class PPEVideoTransformer(VideoProcessorBase): # Changed to VideoProcessorBase
         except Exception as e:
             raw_detect, annotated = set(), rgb
 
-        # Using raw_detect for immediate feedback (smoothing is bypassed/removed)
+        # Using raw_detect for immediate feedback (smoothing is intentionally bypassed)
         st.session_state.detected_live_ppe = raw_detect
         
         # Return frame using av.VideoFrame.from_ndarray
@@ -257,9 +257,9 @@ def scanner_page():
             key="scanner",
             mode=WebRtcMode.SENDRECV,
             rtc_configuration=RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}),
-            # *** UPDATED ARGUMENT ***
+            # Using video_processor_factory to address deprecation warning
             video_processor_factory=lambda: PPEVideoTransformer(wid, wname), 
-            async_processing=True, # Recommended corresponding argument
+            async_processing=True, # Recommended argument for async processing
         )
 
     with status_col:
