@@ -35,8 +35,9 @@ PPE_ITEMS = [
 ]
 
 CLASS_TO_PPE = {
-    "Hardhat": "Hard Hat",
-    "elmet": "Hard Hat",
+    # Reverting to the original short names, relying on the targeted fix for hardhat
+    "hardhat": "Hard Hat",
+    "helmet": "Hard Hat",
     "vest": "Safety Vest",
     "glove": "Gloves",
     "boot": "Safety Boots",
@@ -162,9 +163,17 @@ class PPEVideoTransformer(VideoTransformerBase):
         annotated = result.plot()
         for box in result.boxes:
             cls = int(box.cls)
-            label = self.names.get(cls, "")
-            if label in CLASS_TO_PPE:
-                detected.add(CLASS_TO_PPE[label])
+            raw_label = self.names.get(cls, "") # Get raw label
+            
+            # --- Targeted Fix for Hard Hat using case-insensitive containment check ---
+            if "hardhat" in raw_label.lower():
+                detected.add("Hard Hat")
+            
+            # --- Standard process for other items ---
+            else:
+                label = raw_label.strip().lower() 
+                if label in CLASS_TO_PPE:
+                    detected.add(CLASS_TO_PPE[label])
         return detected, annotated
 
     def transform(self, frame):
@@ -367,6 +376,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
