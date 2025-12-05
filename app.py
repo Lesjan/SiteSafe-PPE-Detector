@@ -8,11 +8,11 @@ import pickle
 import random
 import numpy as np 
 from ultralytics import YOLO
+# Corrected the import name
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoTransformerBase, RTCConfiguration
-# ...
-webrtc_ctx = webrtc_streamer( # <-- Correct function name
-    key="ppe-detection-stream",
-    # ...
+
+# --- GLOBAL PAGE CONFIGURATION ---
+# Must be the first Streamlit command
 st.set_page_config(
     page_title="SiteSafe PPE Detector (Cloud Ready)", 
     layout="wide", 
@@ -136,13 +136,11 @@ class PPEVideoTransformer(VideoTransformerBase):
         self.AUTO_LOG_INTERVAL = 5
         self.inspection_complete = False
         
-        # Initialize or reset state variables for UI outside the transformer
         st.session_state.detected_ppe = set()
         st.session_state.is_compliant = False
         st.session_state.log_message = ""
 
     def simulate_detect(self, frame):
-        # Simulation logic (simulated detection does not draw boxes)
         present = set()
         if random.random() > 0.2: present.add("Hard Hat")
         if random.random() > 0.3: present.add("Safety Vest")
@@ -151,7 +149,7 @@ class PPEVideoTransformer(VideoTransformerBase):
         if random.random() > 0.8: present.add("Eye/Face Protection")
         if random.random() > 0.9: present.add("Hearing Protection")
         if random.random() > 0.95: present.add("Safety Harness")
-        return present, frame # Return frame unchanged if simulated
+        return present, frame
 
     def detect_ppe_webrtc(self, frame):
         if self.USE_SIMULATED or self.model is None:
@@ -162,7 +160,6 @@ class PPEVideoTransformer(VideoTransformerBase):
         
         if self.frame_counter % self.FRAME_SKIP == 0:
             try:
-                # YOLOv8 expects RGB image
                 results = self.model(
                     frame, 
                     device='cpu', 
@@ -171,7 +168,6 @@ class PPEVideoTransformer(VideoTransformerBase):
                     verbose=False
                 )[0]
                 
-                # YOLOv8 plotting function creates the annotated frame (with boxes)
                 annotated_frame = results.plot() 
                 
                 names = self.model.names if hasattr(self.model, "names") else {}
@@ -182,29 +178,23 @@ class PPEVideoTransformer(VideoTransformerBase):
                         detected.add(self.CLASS_TO_PPE[label])
                         
             except Exception as e:
-                # In case of detection error, fall back to simulation
                 detected, annotated_frame = self.simulate_detect(frame) 
         
-        # --- LOGIC AND STATUS UPDATE ---
         missing = [item for item in self.PPE_ITEMS if item not in detected]
         now = time.time()
 
         if now - self.last_log_time > self.AUTO_LOG_INTERVAL:
             if not missing and not self.inspection_complete:
-                # Log COMPLIANT
                 self.log_inspection(self.worker_id, self.worker_name, detected)
                 self.inspection_complete = True
                 st.session_state.log_message = "✅ Compliance LOGGED! Feed stopped for inspection completion."
-                # NOTE: To stop the stream fully, the user must click stop/back.
                 
             elif missing and not self.inspection_complete:
-                # Log NON-COMPLIANT
                 self.log_inspection(self.worker_id, self.worker_name, detected)
                 st.session_state.log_message = f"Non-compliant status logged at {datetime.now().strftime('%H:%M:%S')}. Still checking..."
                 
             self.last_log_time = now
 
-        # Update Streamlit Session State for UI outside the transformer
         st.session_state.detected_ppe = detected
         st.session_state.is_compliant = not missing
         
@@ -212,15 +202,11 @@ class PPEVideoTransformer(VideoTransformerBase):
         return detected, annotated_frame
 
     def transform(self, frame):
-        # Convert WebRTC frame (VideoFrame) to BGR NumPy array
         img = frame.to_ndarray(format="bgr24") 
-        # Convert BGR to RGB for YOLO/Internal Processing
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        # Run detection logic
         detected, annotated_frame = self.detect_ppe_webrtc(img_rgb) 
 
-        # Return the annotated frame back to BGR for WebRTC display
         return cv2.cvtColor(annotated_frame, cv2.COLOR_RGB2BGR)
 
 # ----------------------
@@ -315,7 +301,8 @@ def scanner_page():
         st.info("⚠️ Ensure your browser has camera access enabled and click 'Start'.")
         
         # --- WEBRTC STREAM ---
-        webrtc_ctx = webrtc_stream(
+        # THIS IS THE CORRECT LOCATION AND FUNCTION NAME
+        webrtc_ctx = webrtc_streamer(
             key="ppe-detection-stream",
             mode=WebRtcMode.SENDRECV,
             video_transformer_factory=lambda: PPEVideoTransformer(
@@ -339,7 +326,6 @@ def scanner_page():
         if USE_SIMULATED:
             st.warning("⚠️ Running in SIMULATED detection mode.")
 
-        # Display the real-time status updated by the transformer class
         detected = st.session_state.get("detected_ppe", set())
         missing = [it for it in PPE_ITEMS if it not in detected]
         
@@ -387,4 +373,3 @@ else:
     else:
         st.session_state.page = "worker"
         st.rerun()
-
