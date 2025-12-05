@@ -314,11 +314,15 @@ def scanner_page():
             rtc_configuration=RTCConfiguration(
                 {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
             ),
-            video_transformer_factory=lambda: PPEVideoTransformer(wid, wname),
+            video_transformer_factory=lambda: PPEVideoTransformer(
+                worker_id=wid,
+                worker_name=wname
+            ),
             async_transform=True,
         )
 
-    if st.session_state.get("force_rerun"):
+    # Trigger rerun if transformer signaled a change
+    if st.session_state.get("force_rerun", False):
         st.session_state.force_rerun = False
         st.rerun()
 
@@ -326,6 +330,9 @@ def scanner_page():
         st.markdown("### 📋 PPE Checklist")
 
         detected = st.session_state.get("detected_live_ppe", set())
+        # DEBUG: Show detected PPE items
+        st.write("Detected PPE (stable):", detected)
+
         missing = [it for it in PPE_ITEMS if it not in detected]
 
         checklist = ""
@@ -371,5 +378,6 @@ else:
     else:
         st.session_state.page = "workers"
         st.rerun()
+
 
 
