@@ -11,6 +11,7 @@ from ultralytics import YOLO
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoTransformerBase, RTCConfiguration
 
 # --- GLOBAL PAGE CONFIGURATION ---
+# Must be the first Streamlit command
 st.set_page_config(
     page_title="SiteSafe PPE Detector (Cloud Final)", 
     layout="wide", 
@@ -134,7 +135,6 @@ class PPEVideoTransformer(VideoTransformerBase):
         self.AUTO_LOG_INTERVAL = 5
         self.inspection_complete = False
         
-        # We use a session state key specific to the transformer output
         st.session_state.detected_ppe_live = set()
         st.session_state.log_message = ""
 
@@ -162,7 +162,7 @@ class PPEVideoTransformer(VideoTransformerBase):
                     frame, 
                     device='cpu', 
                     imgsz=640, 
-                    conf=0.35, # Confirmed: Lowered confidence for better stability
+                    conf=0.35, # Confirmed: Lowered confidence for better detection
                     verbose=False
                 )[0]
                 
@@ -193,7 +193,6 @@ class PPEVideoTransformer(VideoTransformerBase):
                 
             self.last_log_time = now
 
-        # --- CRITICAL: Update the single state variable for the checklist ---
         st.session_state.detected_ppe_live = detected
         
         self.frame_counter += 1
@@ -319,9 +318,9 @@ def scanner_page():
         )
     
     # --- RERUN LOOP ---
-    # Fix: Optimized sleep time to 0.1s for responsive checklist updates.
+    # Fix: Optimized sleep time to 0.01s for aggressive, responsive checklist updates.
     if webrtc_ctx.state.playing:
-        time.sleep(0.1) 
+        time.sleep(0.01) 
         st.rerun() 
 
     with status_col:
@@ -333,7 +332,7 @@ def scanner_page():
         detected = st.session_state.get("detected_ppe_live", set())
         missing = [it for it in PPE_ITEMS if it not in detected]
         
-        # --- UI Update (Checklist: Integrated working local logic) ---
+        # --- UI Update (Checklist: Integrated working logic) ---
         checklist_text = "### 📋 PPE Checklist\n"
         
         # This logic is fast and responsive
