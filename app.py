@@ -6,8 +6,9 @@ import pickle
 import pandas as pd
 from datetime import datetime
 from ultralytics import YOLO
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoTransformerBase, RTCConfiguration
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoProcessorBase, RTCConfiguration
 import requests
+import threading
 
 # Optional imports for dashboard
 try:
@@ -33,7 +34,7 @@ PPE_ITEMS = [
     "Safety Harness"
 ]
 
-# *** ENHANCED FIX: More comprehensive mapping with debug logging ***
+# Enhanced CLASS_TO_PPE mapping with more variations
 CLASS_TO_PPE = {
     # Hard Hat variations
     "hardhat": "Hard Hat",
@@ -82,7 +83,6 @@ CLASS_TO_PPE = {
     "safety-harness": "Safety Harness",
     "safety_harness": "Safety Harness",
 }
-# ********************************************************************************
 
 WORKERS = {
     "CW01": "Jasmin Romon",
@@ -91,6 +91,24 @@ WORKERS = {
     "CW04": "Justin Baculio",
     "CW05": "Alexis Anne Emata",
 }   
+
+# Global shared state (thread-safe)
+class SharedState:
+    def __init__(self):
+        self.detected_ppe = set()
+        self.debug_info = []
+        self.lock = threading.Lock()
+    
+    def update_detection(self, ppe_set, debug_list):
+        with self.lock:
+            self.detected_ppe = ppe_set.copy()
+            self.debug_info = debug_list.copy()
+    
+    def get_detection(self):
+        with self.lock:
+            return self.detected_ppe.copy(), self.debug_info.copy()
+
+shared_state = SharedState()
 
 # ----- Download model if needed -----
 def download_model():
@@ -168,47 +186,24 @@ def log_violation(worker_id, worker_name, missing_ppe):
     df.loc[len(df)] = row
     df.to_csv(VIOLATION_LOG, index=False)
 
-# ----- Video Transformer -----
-class PPEVideoTransformer(VideoTransformerBase):
+# ----- Video Processor (Updated API) -----
+class PPEVideoProcessor(VideoProcessorBase):
     def __init__(self, worker_id, worker_name):
         self.worker_id = worker_id
         self.worker_name = worker_name
         self.model = model
         self.names = self.model.names
-        self.smoothing_history = []
-        self.HISTORY = 7
-
-        if "detected_live_ppe" not in st.session_state:
-            st.session_state.detected_live_ppe = set()
-        
-        # *** NEW: Add debug info storage ***
-        if "detection_debug" not in st.session_state:
-            st.session_state.detection_debug = []
-
-    def smooth(self, detected):
-        self.smoothing_history.append(detected)
-        if len(self.smoothing_history) > self.HISTORY:
-            self.smoothing_history.pop(0)
-        smoothed = set()
-        for it in PPE_ITEMS:
-            count = sum(1 for h in self.smoothing_history if it in h)
-            if count > self.HISTORY // 2:
-                smoothed.add(it)
-        return smoothed
 
     def run_yolo(self, frame):
         detected = set()
         result = self.model(frame, conf=0.5, verbose=False)[0]
         annotated = result.plot()
         
-        # *** ENHANCED: Debug logging ***
         debug_info = []
         
         for box in result.boxes:
             cls = int(box.cls)
-            # Get original label
             original_label = self.names.get(cls, "")
-            # Convert to lowercase and also try with underscores/hyphens replaced
             label_lower = original_label.lower()
             label_normalized = label_lower.replace("_", " ").replace("-", " ")
             
@@ -229,23 +224,22 @@ class PPEVideoTransformer(VideoTransformerBase):
             else:
                 debug_info.append(f"  ✗ NOT MAPPED (add '{label_lower}' to CLASS_TO_PPE)")
         
-        # Store debug info
-        st.session_state.detection_debug = debug_info
-        
-        return detected, annotated
+        return detected, annotated, debug_info
 
-    def transform(self, frame):
+    def recv(self, frame):
         img = frame.to_ndarray(format="bgr24")
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        try:
-            raw_detect, annotated = self.run_yolo(rgb)
-        except Exception as e:
-            raw_detect, annotated = set(), rgb
-            st.session_state.detection_debug = [f"Error: {str(e)}"]
-
-        st.session_state.detected_live_ppe = raw_detect
         
-        return cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
+        try:
+            detected, annotated, debug_info = self.run_yolo(rgb)
+            # Update shared state (thread-safe)
+            shared_state.update_detection(detected, debug_info)
+        except Exception as e:
+            annotated = rgb
+            shared_state.update_detection(set(), [f"Error: {str(e)}"])
+        
+        from av import VideoFrame
+        return VideoFrame.from_ndarray(cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR), format="bgr24")
 
 # ----- Pages -----
 
@@ -310,27 +304,34 @@ def scanner_page():
             key="scanner",
             mode=WebRtcMode.SENDRECV,
             rtc_configuration=RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}),
-            video_transformer_factory=lambda: PPEVideoTransformer(wid, wname),
-            async_transform=True,
+            video_processor_factory=lambda: PPEVideoProcessor(wid, wname),
+            async_processing=True,
         )
 
     with status_col:
-        st.markdown("### 📋 PPE Checklist")
-        detected = st.session_state.get("detected_live_ppe", set())
+        # Create a placeholder for live updates
+        checklist_placeholder = st.empty()
+        debug_placeholder = st.empty()
+        
+        # Get current detection from shared state
+        detected, debug_info = shared_state.get_detection()
         missing = [it for it in PPE_ITEMS if it not in detected]
 
-        checklist = ""
-        for it in PPE_ITEMS:
-            if it in detected:
-                checklist += f"<span style='color:green'>✔ **{it}**</span><br>"
-            else:
-                checklist += f"<span style='color:red'>❌ **{it}**</span><br>"
-        st.markdown(checklist, unsafe_allow_html=True)
+        # Display checklist
+        with checklist_placeholder.container():
+            st.markdown("### 📋 PPE Checklist")
+            checklist = ""
+            for it in PPE_ITEMS:
+                if it in detected:
+                    checklist += f"<span style='color:green'>✔ **{it}**</span><br>"
+                else:
+                    checklist += f"<span style='color:red'>❌ **{it}**</span><br>"
+            st.markdown(checklist, unsafe_allow_html=True)
 
-        # *** NEW: Show debug information ***
-        if st.session_state.get("detection_debug"):
-            with st.expander("🐛 Debug Info - Raw Detections"):
-                for info in st.session_state.detection_debug:
+        # Show debug information
+        if debug_info:
+            with debug_placeholder.expander("🐛 Debug Info - Raw Detections"):
+                for info in debug_info:
                     st.text(info)
 
         if st.button("Save Inspection"):
@@ -347,6 +348,10 @@ def scanner_page():
         if os.path.exists(VIOLATION_LOG):
             with open(VIOLATION_LOG, "rb") as f:
                 st.download_button("Download Violation Logs CSV", f, file_name="ppe_violations.csv", mime="text/csv")
+        
+        # Auto-refresh to update checklist
+        time.sleep(0.1)
+        st.rerun()
 
 def dashboard_page():
     st.title("📊 SiteSafe PPE Compliance Dashboard")
