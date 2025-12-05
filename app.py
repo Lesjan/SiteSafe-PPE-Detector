@@ -35,8 +35,8 @@ PPE_ITEMS = [
 ]
 
 CLASS_TO_PPE = {
-    "Hardhat": "Hard Hat",
-    "Hardhat": "Hardhat",
+    "hardhat": "Hard Hat",
+    "helmet": "Hard Hat",
     "vest": "Safety Vest",
     "glove": "Gloves",
     "boot": "Safety Boots",
@@ -367,6 +367,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
