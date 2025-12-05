@@ -143,8 +143,8 @@ class PPEVideoTransformer(VideoProcessorBase):
         self.smoothing_history = []
         self.HISTORY = 7
 
-        if "detected_live_ppe" not in st.session_state:
-            st.session_state.detected_live_ppe = set()
+        if "detected_ppe" not in st.session_state:
+            st.session_state.detected_ppe = set()
 
     def smooth(self, detected):
         self.smoothing_history.append(detected)
@@ -385,5 +385,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
