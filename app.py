@@ -164,7 +164,8 @@ class PPEVideoTransformer(VideoTransformerBase):
                     frame, 
                     device='cpu', 
                     imgsz=640, 
-                    conf=0.5,
+                    # CONFIDENCE IS SET TO 0.5 HERE, change to 0.35 if detection is weak
+                    conf=0.5, 
                     verbose=False
                 )[0]
                 
@@ -301,7 +302,6 @@ def scanner_page():
         st.info("⚠️ Ensure your browser has camera access enabled and click 'Start'.")
         
         # --- WEBRTC STREAM ---
-        # THIS IS THE CORRECT LOCATION AND FUNCTION NAME
         webrtc_ctx = webrtc_streamer(
             key="ppe-detection-stream",
             mode=WebRtcMode.SENDRECV,
