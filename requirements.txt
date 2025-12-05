@@ -1,7 +1,11 @@
 streamlit
-pandas
-opencv-python-headless
-ultralytics
-numpy
 streamlit-webrtc
-
+ultralytics
+opencv-python-headless
+numpy
+pandas
+requests
+protobuf
+pillow
+av
+python-dotenv
