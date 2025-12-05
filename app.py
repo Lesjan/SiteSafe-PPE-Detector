@@ -100,7 +100,7 @@ WORKERS = {
 # PPE ITEMS
 # ============================
 PPE_ITEMS = [
-    "Hardhat",
+    "hardhat",
     "Safety Vest",
     "Gloves",
     "Safety Boots",
@@ -444,4 +444,5 @@ def render_page():
 # ============================
 sidebar()
 render_page()
+
 
