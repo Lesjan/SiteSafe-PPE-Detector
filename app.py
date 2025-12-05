@@ -8,9 +8,11 @@ import pickle
 import random
 import numpy as np 
 from ultralytics import YOLO
-from streamlit_webrtc import webrtc_stream, WebRtcMode, VideoTransformerBase, RTCConfiguration
-
-# --- GLOBAL PAGE CONFIGURATION ---
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoTransformerBase, RTCConfiguration
+# ...
+webrtc_ctx = webrtc_streamer( # <-- Correct function name
+    key="ppe-detection-stream",
+    # ...
 st.set_page_config(
     page_title="SiteSafe PPE Detector (Cloud Ready)", 
     layout="wide", 
@@ -385,3 +387,4 @@ else:
     else:
         st.session_state.page = "worker"
         st.rerun()
+
