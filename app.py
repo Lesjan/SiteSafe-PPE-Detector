@@ -192,7 +192,7 @@ def login_page():
                 st.session_state.page = "Workers"
                 st.session_state.worker_id = None
                 st.session_state.worker_name = None
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error("Invalid username or password.")
 
@@ -221,7 +221,7 @@ def worker_page():
         st.session_state.worker_id = worker_id
         st.session_state.worker_name = worker_name
         st.session_state.page = "Scanner"
-        st.experimental_rerun()
+        st.rerun()
 
 def scanner_page():
     st.title("📹 PPE Live Scanner")
@@ -331,7 +331,7 @@ def sidebar():
         st.session_state.page = "Login"
         st.session_state.worker_id = None
         st.session_state.worker_name = None
-        st.experimental_rerun()
+        st.rerun()
     else:
         st.session_state.page = choice
 
@@ -366,3 +366,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
