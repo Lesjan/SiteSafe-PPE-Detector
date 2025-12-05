@@ -54,6 +54,16 @@ WORKERS = {
     "CW04": "Justin Baculio",
     "CW05": "Alexis Anne Emata",
 }
+def simulated_detect(frame):
+        present = set()
+        if random.random() > 0.2: present.add("Hard Hat")
+        if random.random() > 0.3: present.add("Safety Vest")
+        if random.random() > 0.6: present.add("Gloves")
+        if random.random() > 0.5: present.add("Safety Boots")
+        if random.random() > 0.8: present.add("Eye/Face Protection")
+        if random.random() > 0.9: present.add("Hearing Protection")
+        if random.random() > 0.95: present.add("Safety Harness")
+        return present
 
 # ----- Download model if needed -----
 def download_model():
@@ -366,4 +376,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
