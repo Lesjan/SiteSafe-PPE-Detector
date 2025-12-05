@@ -8,7 +8,7 @@ import pickle
 import random
 import numpy as np 
 from ultralytics import YOLO
-# Corrected the import name
+# Corrected import name: 'webrtc_streamer'
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoTransformerBase, RTCConfiguration
 
 # --- GLOBAL PAGE CONFIGURATION ---
@@ -49,7 +49,7 @@ model = load_yolo_model()
 def go_back():
     st.session_state.page = "worker"
     st.session_state.uploaded_image = None
-    st.session_state.webrtc_running = False # Reset flag for WebRTC
+    st.session_state.webrtc_running = False
     st.rerun() 
 
 # ----------------------
@@ -164,7 +164,7 @@ class PPEVideoTransformer(VideoTransformerBase):
                     frame, 
                     device='cpu', 
                     imgsz=640, 
-                    conf=0.35, # <--- CONFIDENCE CHANGED TO 0.35
+                    conf=0.35, # Confirmed: Lowered confidence for better detection
                     verbose=False
                 )[0]
                 
@@ -321,11 +321,12 @@ def scanner_page():
         )
     
     # --- RERUN LOOP ---
+    # Fix: Replaced st.experimental_rerun() with the correct st.rerun()
     # This loop forces the script to rerun every second when the stream is playing, 
     # ensuring the checklist immediately reflects the updated st.session_state.
     if webrtc_ctx.state.playing:
         time.sleep(1) 
-        st.experimental_rerun() 
+        st.rerun() 
 
     with status_col:
         
