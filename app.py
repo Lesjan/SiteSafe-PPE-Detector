@@ -1,3 +1,4 @@
+
 import streamlit as st
 import cv2
 import time
@@ -6,9 +7,8 @@ import pickle
 import pandas as pd
 from datetime import datetime
 from ultralytics import YOLO
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoProcessorBase, RTCConfiguration # Updated import
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoTransformerBase, RTCConfiguration
 import requests
-import av # Required for VideoProcessorBase and recv()
 
 # Optional imports for dashboard
 try:
@@ -34,7 +34,6 @@ PPE_ITEMS = [
     "Safety Harness"
 ]
 
-# Standardized mapping with lowercase keys
 CLASS_TO_PPE = {
     "hardhat": "Hard Hat",
     "helmet": "Hard Hat",
@@ -133,8 +132,8 @@ def log_violation(worker_id, worker_name, missing_ppe):
     df.loc[len(df)] = row
     df.to_csv(VIOLATION_LOG, index=False)
 
-# ----- Video Processor -----
-class PPEVideoTransformer(VideoProcessorBase): 
+# ----- Video Transformer -----
+class PPEVideoTransformer(VideoTransformerBase):
     def __init__(self, worker_id, worker_name):
         self.worker_id = worker_id
         self.worker_name = worker_name
@@ -163,24 +162,12 @@ class PPEVideoTransformer(VideoProcessorBase):
         annotated = result.plot()
         for box in result.boxes:
             cls = int(box.cls)
-            
-            # Get raw label and clean it immediately (strip whitespace and convert to lowercase)
-            raw_label = self.names.get(cls, "")
-            cleaned_label = raw_label.strip().lower() 
-            
-            # *** TARGETED HARD HAT FIX ***
-            # Use string containment check for hardhat/helmet to bypass any subtle mismatch
-            if "hardhat" in cleaned_label or "helmet" in cleaned_label:
-                detected.add("Hard Hat")
-            
-            # Standard process for all other items/aliases
-            elif cleaned_label in CLASS_TO_PPE:
-                detected.add(CLASS_TO_PPE[cleaned_label])
-
+            label = self.names.get(cls, "").lower()
+            if label in CLASS_TO_PPE:
+                detected.add(CLASS_TO_PPE[label])
         return detected, annotated
 
-    # Using the required recv() method
-    def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
+    def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         try:
@@ -188,11 +175,9 @@ class PPEVideoTransformer(VideoProcessorBase):
         except Exception as e:
             raw_detect, annotated = set(), rgb
 
-        # Using raw_detect for immediate feedback (smoothing is intentionally bypassed)
-        st.session_state.detected_live_ppe = raw_detect
-        
-        # Return frame using av.VideoFrame.from_ndarray
-        return av.VideoFrame.from_ndarray(cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR), format="bgr24")
+        stable_detect = self.smooth(raw_detect)
+        st.session_state.detected_live_ppe = stable_detect
+        return cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
 
 # ----- Pages -----
 
@@ -257,9 +242,8 @@ def scanner_page():
             key="scanner",
             mode=WebRtcMode.SENDRECV,
             rtc_configuration=RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}),
-            # Using video_processor_factory to address deprecation warning
-            video_processor_factory=lambda: PPEVideoTransformer(wid, wname), 
-            async_processing=True, # Recommended argument for async processing
+            video_transformer_factory=lambda: PPEVideoTransformer(wid, wname),
+            async_transform=True,
         )
 
     with status_col:
@@ -383,3 +367,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
