@@ -1,5 +1,6 @@
 streamlit
 pandas
 opencv-python
-numpy
 ultralytics
+numpy
+streamlit-webrtc
