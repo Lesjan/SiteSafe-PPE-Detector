@@ -3,9 +3,7 @@ import cv2
 import time
 import os
 import pickle
-import random
 import pandas as pd
-import numpy as np
 from datetime import datetime
 from ultralytics import YOLO
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoTransformerBase, RTCConfiguration
@@ -28,7 +26,6 @@ MODEL_PATH = "best.pt"
 # OPTION 2 — MODEL DOWNLOAD FROM GITHUB RAW
 # ------------------------------------------------------------------------------
 MODEL_URL = "https://raw.githubusercontent.com/<YOUR_USERNAME>/<YOUR_REPO>/<YOUR_BRANCH>/best.pt"
-
 
 def download_model():
     """Download best.pt safely from GitHub RAW."""
@@ -57,7 +54,6 @@ def download_model():
         if os.path.exists(MODEL_PATH):
             os.remove(MODEL_PATH)
 
-
 # ------------------------------------------------------------------------------
 # YOLO MODEL (CACHED)
 # ------------------------------------------------------------------------------
@@ -74,7 +70,6 @@ def load_model():
 
     return YOLO("yolov8n.pt")
 
-
 model = load_model()
 
 # ------------------------------------------------------------------------------
@@ -89,11 +84,9 @@ def load_user_db():
             return {"admin": "12345"}
     return {"admin": "12345"}
 
-
 def save_user_db(data):
     with open(USER_DB_FILE, "wb") as f:
         pickle.dump(data, f)
-
 
 USER_DB = load_user_db()
 
@@ -143,9 +136,7 @@ def init_log_file():
         df = pd.DataFrame(columns=["timestamp", "worker_id", "worker_name"] + PPE_ITEMS)
         df.to_csv(LOG_FILE, index=False)
 
-
 init_log_file()
-
 
 def log_inspection(worker_id, worker_name, detected):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -180,6 +171,9 @@ class PPEVideoTransformer(VideoTransformerBase):
         if len(self.smoothing_history) > self.HISTORY:
             self.smoothing_history.pop(0)
 
+        if len(self.smoothing_history) < self.HISTORY:
+            return detected  # Early return if not enough history yet
+
         smoothed = set()
         for it in PPE_ITEMS:
             cnt = sum(1 for h in self.smoothing_history if it in h)
@@ -188,44 +182,47 @@ class PPEVideoTransformer(VideoTransformerBase):
 
         return smoothed
 
-def run_yolo(self, frame):
-    detected = set()
-    # Increase confidence to 0.5 for more stable detection
-    result = self.model(frame, conf=0.5, verbose=False)[0]
-    annotated = result.plot()
+    def run_yolo(self, frame):
+        detected = set()
+        result = self.model(frame, conf=0.5, verbose=False)[0]
+        annotated = result.plot()
 
-    for box in result.boxes:
-        cls = int(box.cls)
-        label = self.names.get(cls, "").lower()
-        if label in CLASS_TO_PPE:
-            detected.add(CLASS_TO_PPE[label])  # This should add e.g. "Hard Hat"
+        for box in result.boxes:
+            cls = int(box.cls)
+            label = self.names.get(cls, "").lower()
+            if label in CLASS_TO_PPE:
+                detected.add(CLASS_TO_PPE[label])
 
-    return detected, annotated
+        # Debug prints
+        print("Raw detected labels:", [self.names[int(box.cls)].lower() for box in result.boxes])
+        print("Mapped detected PPE:", detected)
 
-def transform(self, frame):
-    img = frame.to_ndarray(format="bgr24")
-    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    
-    if self.frame_counter % 5 == 0:
-        try:
-            raw_detect, annotated = self.run_yolo(rgb)
-        except Exception as e:
-            raw_detect, annotated = set(), rgb
-            print("YOLO error:", e)
+        return detected, annotated
 
-        stable_detect = self.smooth(raw_detect)
-        
-        # Update session state only if detection changed
-        if stable_detect != st.session_state.detected_live_ppe:
-            st.session_state.detected_live_ppe = stable_detect
-            st.session_state.last_update = time.time()
-            st.session_state.force_rerun = True
+    def transform(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    else:
-        annotated = rgb
-    
-    self.frame_counter += 1
-    return cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
+        if self.frame_counter % 5 == 0:
+            try:
+                raw_detect, annotated = self.run_yolo(rgb)
+            except Exception as e:
+                raw_detect, annotated = set(), rgb
+                print("YOLO error:", e)
+
+            stable_detect = self.smooth(raw_detect)
+
+            # Update session state only if detection changed
+            if stable_detect != st.session_state.detected_live_ppe:
+                st.session_state.detected_live_ppe = stable_detect
+                st.session_state.last_update = time.time()
+                st.session_state.force_rerun = True
+
+        else:
+            annotated = rgb
+
+        self.frame_counter += 1
+        return cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
 
 # ------------------------------------------------------------------------------
 # LOGIN PAGE
@@ -235,9 +232,6 @@ def login_page():
 
     tab1, tab2 = st.tabs(["Sign In", "Sign Up"])
 
-    # -----------------------
-    # SIGN IN TAB
-    # -----------------------
     with tab1:
         user = st.text_input("Username", key="login_user")
         pw = st.text_input("Password", type="password", key="login_pw")
@@ -246,13 +240,10 @@ def login_page():
             if user in USER_DB and USER_DB[user] == pw:
                 st.session_state.logged_in = True
                 st.session_state.page = "workers"
-                st.rerun()
+                st.experimental_rerun()
             else:
                 st.error("Invalid username or password.")
 
-    # -----------------------
-    # SIGN UP TAB
-    # -----------------------
     with tab2:
         new_user = st.text_input("New Username", key="signup_user")
         new_pw = st.text_input("New Password", type="password", key="signup_pw")
@@ -285,12 +276,12 @@ def worker_page():
         st.session_state.worker_id = worker_id
         st.session_state.worker_name = worker_name
         st.session_state.page = "scanner"
-        st.rerun()
+        st.experimental_rerun()
 
     if st.button("Logout"):
         st.session_state.logged_in = False
         st.session_state.page = "login"
-        st.rerun()
+        st.experimental_rerun()
 
 # ------------------------------------------------------------------------------
 # SCANNER PAGE
@@ -324,7 +315,7 @@ def scanner_page():
     # Trigger rerun if transformer signaled a change
     if st.session_state.get("force_rerun", False):
         st.session_state.force_rerun = False
-        st.rerun()
+        st.experimental_rerun()
 
     with status_col:
         st.markdown("### 📋 PPE Checklist")
@@ -357,7 +348,7 @@ def scanner_page():
 # ------------------------------------------------------------------------------
 def set_page(p):
     st.session_state.page = p
-    st.rerun()
+    st.experimental_rerun()
 
 # ------------------------------------------------------------------------------
 # MAIN APP
@@ -377,7 +368,4 @@ else:
         scanner_page()
     else:
         st.session_state.page = "workers"
-        st.rerun()
-
-
-
+        st.experimental_rerun()
