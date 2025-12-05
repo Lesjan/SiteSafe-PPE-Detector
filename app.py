@@ -33,19 +33,32 @@ PPE_ITEMS = [
     "Safety Harness"
 ]
 
+# *** FIX APPLIED HERE: Added capitalized labels for robustness ***
 CLASS_TO_PPE = {
     "hardhat": "Hard Hat",
+    "Hardhat": "Hard Hat",      # Added
     "helmet": "Hard Hat",
+    "Helmet": "Hard Hat",       # Added
     "vest": "Safety Vest",
+    "Vest": "Safety Vest",       # Added
     "glove": "Gloves",
+    "Glove": "Gloves",          # Added
     "boot": "Safety Boots",
+    "Boot": "Safety Boots",     # Added
     "boots": "Safety Boots",
+    "Boots": "Safety Boots",    # Added
     "goggles": "Eye/Face Protection",
+    "Goggles": "Eye/Face Protection", # Added
     "mask": "Eye/Face Protection",
+    "Mask": "Eye/Face Protection",   # Added
     "earmuff": "Hearing Protection",
+    "Earmuff": "Hearing Protection", # Added
     "ear_protection": "Hearing Protection",
+    "Ear_protection": "Hearing Protection", # Added
     "harness": "Safety Harness",
+    "Harness": "Safety Harness", # Added
 }
+# ********************************************************************
 
 WORKERS = {
     "CW01": "Jasmin Romon",
@@ -92,7 +105,7 @@ def load_user_db():
 
 def save_user_db(data):
     with open(USER_DB_FILE, "wb") as f:
-        pickle.dump(data, f)
+        pickle.dump(data, data)
 
 USER_DB = load_user_db()
 
@@ -144,6 +157,8 @@ class PPEVideoTransformer(VideoTransformerBase):
         if "detected_live_ppe" not in st.session_state:
             st.session_state.detected_live_ppe = set()
 
+    # The smoothing logic is now commented out in transform(), 
+    # but the method is kept here in case you want to reintroduce it.
     def smooth(self, detected):
         self.smoothing_history.append(detected)
         if len(self.smoothing_history) > self.HISTORY:
@@ -161,12 +176,15 @@ class PPEVideoTransformer(VideoTransformerBase):
         annotated = result.plot()
         for box in result.boxes:
             cls = int(box.cls)
-            label = self.names.get(cls, "").lower()
+            # Keeping .lower() for robustness, but also added capitalized names to CLASS_TO_PPE
+            label = self.names.get(cls, "") # Removed .lower() to allow capitalized match in the map
             if label in CLASS_TO_PPE:
                 detected.add(CLASS_TO_PPE[label])
+            elif label.lower() in CLASS_TO_PPE:
+                detected.add(CLASS_TO_PPE[label.lower()])
+                
         return detected, annotated
 
-    # *** FIX APPLIED HERE ***
     def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -175,15 +193,10 @@ class PPEVideoTransformer(VideoTransformerBase):
         except Exception as e:
             raw_detect, annotated = set(), rgb
 
-        # The issue was likely due to the strict smoothing logic or a delay.
-        # Temporarily bypass smoothing to show immediate detection feedback.
-        # stable_detect = self.smooth(raw_detect)
-        # st.session_state.detected_live_ppe = stable_detect
-
+        # Using raw_detect for immediate feedback (smoothing is bypassed/removed)
         st.session_state.detected_live_ppe = raw_detect
         
         return cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
-    # ************************
 
 # ----- Pages -----
 
