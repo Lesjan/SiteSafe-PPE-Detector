@@ -80,7 +80,8 @@ def load_model():
             return YOLO(MODEL_PATH)
         else:
             return YOLO("yolov8n.pt")
-    except:
+    except Exception:
+        # fallback to small default
         return YOLO("yolov8n.pt")
 
 model = load_model()
@@ -139,7 +140,11 @@ class PPEVideoTransformer(VideoProcessorBase):
         self.worker_id = worker_id
         self.worker_name = worker_name
         self.model = model
-        self.names = self.model.names
+        # model.names may be a dict or list depending on model version
+        try:
+            self.names = self.model.names
+        except Exception:
+            self.names = {}
         self.smoothing_history = []
         self.HISTORY = 7
 
@@ -159,20 +164,30 @@ class PPEVideoTransformer(VideoProcessorBase):
 
     def run_yolo(self, frame):
         detected = set()
+        # run model (frame expected as RGB)
         result = self.model(frame, conf=0.5, verbose=False)[0]
         annotated = result.plot()
         for box in result.boxes:
-            cls = int(box.cls)
-            
-            # Get raw label and clean it immediately (strip whitespace and convert to lowercase)
-            raw_label = self.names.get(cls, "")
-            cleaned_label = raw_label.strip().lower() 
-            
-            # *** FINAL ROBUST HARD HAT CHECK (String Containment) ***
+            try:
+                cls = int(box.cls)
+            except Exception:
+                continue
+
+            raw_label = ""
+            # model.names may be dict or list
+            try:
+                if isinstance(self.names, dict):
+                    raw_label = self.names.get(cls, "")
+                else:
+                    raw_label = self.names[cls] if cls < len(self.names) else ""
+            except Exception:
+                raw_label = ""
+
+            cleaned_label = raw_label.strip().lower()
+
+            # Hard hat robust check (containment)
             if "hardhat" in cleaned_label or "helmet" in cleaned_label:
                 detected.add("Hard Hat")
-            
-            # Standard process for all other items/aliases
             elif cleaned_label in CLASS_TO_PPE:
                 detected.add(CLASS_TO_PPE[cleaned_label])
 
@@ -180,22 +195,23 @@ class PPEVideoTransformer(VideoProcessorBase):
 
     # Using the required recv() method
     def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
-    img = frame.to_ndarray(format="bgr24")
-    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # CORRECT INDENTATION - everything inside this method
+        img = frame.to_ndarray(format="bgr24")
+        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    try:
-        raw_detect, annotated = self.run_yolo(rgb)
-    except:
-        raw_detect, annotated = set(), rgb
+        try:
+            raw_detect, annotated = self.run_yolo(rgb)
+        except Exception:
+            raw_detect, annotated = set(), rgb
 
-    # WRITE DETECTED PPE HERE — unified name
-    st.session_state.detected_ppe = raw_detect
+        # Store the detected PPE in a unified session_state key
+        st.session_state.detected_ppe = raw_detect
 
-    # Return video frame
-    return av.VideoFrame.from_ndarray(
-        cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR), 
-        format="bgr24"
-    )
+        # Return annotated frame (convert back to BGR)
+        return av.VideoFrame.from_ndarray(
+            cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR), 
+            format="bgr24"
+        )
 
 # ----- Pages -----
 
@@ -385,6 +401,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
