@@ -122,7 +122,6 @@ CLASS_TO_PPE = {
         "earmuff": "Hearing Protection", "ear_protection": "Hearing Protection",
         "harness": "Safety Harness"
     }
-}
 
 # ------------------------------------------------------------------------------
 # LOGGING
@@ -365,5 +364,6 @@ else:
     else:
         st.session_state.page = "workers"
         st.experimental_rerun()
+
 
 
