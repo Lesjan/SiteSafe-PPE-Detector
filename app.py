@@ -188,39 +188,44 @@ class PPEVideoTransformer(VideoTransformerBase):
 
         return smoothed
 
-    def run_yolo(self, frame):
-        detected = set()
-        result = self.model(frame, conf=0.35, verbose=False)[0]
-        annotated = result.plot()
+def run_yolo(self, frame):
+    detected = set()
+    # Increase confidence to 0.5 for more stable detection
+    result = self.model(frame, conf=0.5, verbose=False)[0]
+    annotated = result.plot()
 
-        for box in result.boxes:
-            cls = int(box.cls)
-            label = self.names.get(cls, "").lower()
-            if label in CLASS_TO_PPE:
-                detected.add(CLASS_TO_PPE[label])
+    for box in result.boxes:
+        cls = int(box.cls)
+        label = self.names.get(cls, "").lower()
+        if label in CLASS_TO_PPE:
+            detected.add(CLASS_TO_PPE[label])  # This should add e.g. "Hard Hat"
 
-        return detected, annotated
+    return detected, annotated
 
-    def transform(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+def transform(self, frame):
+    img = frame.to_ndarray(format="bgr24")
+    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    
+    if self.frame_counter % 5 == 0:
+        try:
+            raw_detect, annotated = self.run_yolo(rgb)
+        except Exception as e:
+            raw_detect, annotated = set(), rgb
+            print("YOLO error:", e)
 
-        if self.frame_counter % 5 == 0:
-            try:
-                raw_detect, annotated = self.run_yolo(rgb)
-            except:
-                raw_detect, annotated = set(), rgb
+        stable_detect = self.smooth(raw_detect)
+        
+        # Update session state only if detection changed
+        if stable_detect != st.session_state.detected_live_ppe:
+            st.session_state.detected_live_ppe = stable_detect
+            st.session_state.last_update = time.time()
+            st.session_state.force_rerun = True
 
-            stable = self.smooth(raw_detect)
-
-            if stable != st.session_state.detected_live_ppe:
-                st.session_state.detected_live_ppe = stable
-                st.session_state.force_rerun = True
-        else:
-            annotated = rgb
-
-        self.frame_counter += 1
-        return cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
+    else:
+        annotated = rgb
+    
+    self.frame_counter += 1
+    return cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
 
 # ------------------------------------------------------------------------------
 # LOGIN PAGE
@@ -366,4 +371,5 @@ else:
     else:
         st.session_state.page = "workers"
         st.rerun()
+
 
