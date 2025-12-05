@@ -225,11 +225,11 @@ def worker_page():
         st.session_state.worker_id = worker_id
         st.session_state.worker_name = worker_name
         st.session_state.page = "scanner"
-        st.experimental_rerun()
+        st.rerun()
     if st.button("Logout", key="logout_worker"):
         st.session_state.logged_in = False
         st.session_state.page = "login"
-        st.experimental_rerun()
+        st.rerun()
 
 # ------------------------------------------------------------------------
 # SCANNER PAGE
@@ -276,7 +276,7 @@ def scanner_page():
 # ------------------------------------------------------------------------
 def set_page(p):
     st.session_state.page = p
-    st.experimental_rerun()
+    st.rerun()
 
 # ------------------------------------------------------------------------
 # MAIN APP
@@ -295,5 +295,6 @@ else:
         scanner_page()
     else:
         st.session_state.page = "workers"
-        st.experimental_rerun()
+        st.rerun()
+
 
