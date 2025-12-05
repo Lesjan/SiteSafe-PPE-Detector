@@ -33,27 +33,54 @@ PPE_ITEMS = [
     "Safety Harness"
 ]
 
-# *** FIX APPLIED HERE: Added generic lowercase PPE names as keys for robustness ***
+# *** ENHANCED FIX: More comprehensive mapping with debug logging ***
 CLASS_TO_PPE = {
+    # Hard Hat variations
     "hardhat": "Hard Hat",
+    "hard-hat": "Hard Hat",
+    "hard_hat": "Hard Hat",
     "helmet": "Hard Hat",
+    "hard hat": "Hard Hat",
+    
+    # Safety Vest variations
     "vest": "Safety Vest",
+    "safety vest": "Safety Vest",
+    "safety-vest": "Safety Vest",
+    "safety_vest": "Safety Vest",
+    "hi-vis": "Safety Vest",
+    "hiviz": "Safety Vest",
+    
+    # Gloves variations
     "glove": "Gloves",
+    "gloves": "Gloves",
+    
+    # Boots variations
     "boot": "Safety Boots",
     "boots": "Safety Boots",
-    "goggles": "Eye/Face Protection",
-    "mask": "Eye/Face Protection",
-    "earmuff": "Hearing Protection",
-    "ear_protection": "Hearing Protection",
-    "harness": "Safety Harness",
-    
-    # Failsafe keys matching the full PPE item name (converted to lowercase)
-    "hard hat": "Hard Hat",
-    "safety vest": "Safety Vest",
     "safety boots": "Safety Boots",
+    "safety-boots": "Safety Boots",
+    "safety_boots": "Safety Boots",
+    
+    # Eye/Face Protection variations
+    "goggles": "Eye/Face Protection",
+    "glasses": "Eye/Face Protection",
+    "mask": "Eye/Face Protection",
+    "face shield": "Eye/Face Protection",
+    "eye protection": "Eye/Face Protection",
     "eye/face protection": "Eye/Face Protection",
+    
+    # Hearing Protection variations
+    "earmuff": "Hearing Protection",
+    "earmuffs": "Hearing Protection",
+    "ear protection": "Hearing Protection",
+    "ear_protection": "Hearing Protection",
     "hearing protection": "Hearing Protection",
+    
+    # Safety Harness variations
+    "harness": "Safety Harness",
     "safety harness": "Safety Harness",
+    "safety-harness": "Safety Harness",
+    "safety_harness": "Safety Harness",
 }
 # ********************************************************************************
 
@@ -153,6 +180,10 @@ class PPEVideoTransformer(VideoTransformerBase):
 
         if "detected_live_ppe" not in st.session_state:
             st.session_state.detected_live_ppe = set()
+        
+        # *** NEW: Add debug info storage ***
+        if "detection_debug" not in st.session_state:
+            st.session_state.detection_debug = []
 
     def smooth(self, detected):
         self.smoothing_history.append(detected)
@@ -169,12 +200,38 @@ class PPEVideoTransformer(VideoTransformerBase):
         detected = set()
         result = self.model(frame, conf=0.5, verbose=False)[0]
         annotated = result.plot()
+        
+        # *** ENHANCED: Debug logging ***
+        debug_info = []
+        
         for box in result.boxes:
             cls = int(box.cls)
-            # Ensured label is converted to lowercase for robust dictionary lookup
-            label = self.names.get(cls, "").lower() 
-            if label in CLASS_TO_PPE:
-                detected.add(CLASS_TO_PPE[label])
+            # Get original label
+            original_label = self.names.get(cls, "")
+            # Convert to lowercase and also try with underscores/hyphens replaced
+            label_lower = original_label.lower()
+            label_normalized = label_lower.replace("_", " ").replace("-", " ")
+            
+            debug_info.append(f"Detected: '{original_label}' -> '{label_lower}'")
+            
+            # Try multiple variations
+            mapped_ppe = None
+            if label_lower in CLASS_TO_PPE:
+                mapped_ppe = CLASS_TO_PPE[label_lower]
+            elif label_normalized in CLASS_TO_PPE:
+                mapped_ppe = CLASS_TO_PPE[label_normalized]
+            elif label_lower.replace(" ", "") in CLASS_TO_PPE:
+                mapped_ppe = CLASS_TO_PPE[label_lower.replace(" ", "")]
+            
+            if mapped_ppe:
+                detected.add(mapped_ppe)
+                debug_info.append(f"  ✓ Mapped to: {mapped_ppe}")
+            else:
+                debug_info.append(f"  ✗ NOT MAPPED (add '{label_lower}' to CLASS_TO_PPE)")
+        
+        # Store debug info
+        st.session_state.detection_debug = debug_info
+        
         return detected, annotated
 
     def transform(self, frame):
@@ -184,10 +241,7 @@ class PPEVideoTransformer(VideoTransformerBase):
             raw_detect, annotated = self.run_yolo(rgb)
         except Exception as e:
             raw_detect, annotated = set(), rgb
-
-        # Using raw_detect for immediate feedback (smoothing is bypassed/removed)
-        # stable_detect = self.smooth(raw_detect)
-        # st.session_state.detected_live_ppe = stable_detect
+            st.session_state.detection_debug = [f"Error: {str(e)}"]
 
         st.session_state.detected_live_ppe = raw_detect
         
@@ -272,6 +326,12 @@ def scanner_page():
             else:
                 checklist += f"<span style='color:red'>❌ **{it}**</span><br>"
         st.markdown(checklist, unsafe_allow_html=True)
+
+        # *** NEW: Show debug information ***
+        if st.session_state.get("detection_debug"):
+            with st.expander("🐛 Debug Info - Raw Detections"):
+                for info in st.session_state.detection_debug:
+                    st.text(info)
 
         if st.button("Save Inspection"):
             log_inspection(wid, wname, detected)
