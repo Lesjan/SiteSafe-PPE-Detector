@@ -115,7 +115,7 @@ PPE_ITEMS = [
 ]
 
 CLASS_TO_PPE = {
-    "hardhat": "Hard Hat",
+    "Hardhat": "Hard Hat",
     "helmet": "Hard Hat",
     "vest": "Safety Vest",
     "glove": "Gloves",
@@ -369,3 +369,4 @@ else:
     else:
         st.session_state.page = "workers"
         st.experimental_rerun()
+
