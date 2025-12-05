@@ -164,8 +164,7 @@ class PPEVideoTransformer(VideoTransformerBase):
                     frame, 
                     device='cpu', 
                     imgsz=640, 
-                    # CONFIDENCE IS SET TO 0.5 HERE, change to 0.35 if detection is weak
-                    conf=0.5, 
+                    conf=0.35, # <--- CONFIDENCE CHANGED TO 0.35
                     verbose=False
                 )[0]
                 
@@ -320,6 +319,13 @@ def scanner_page():
             ),
             async_transform=True
         )
+    
+    # --- RERUN LOOP ---
+    # This loop forces the script to rerun every second when the stream is playing, 
+    # ensuring the checklist immediately reflects the updated st.session_state.
+    if webrtc_ctx.state.playing:
+        time.sleep(1) 
+        st.experimental_rerun() 
 
     with status_col:
         
