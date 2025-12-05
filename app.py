@@ -3,11 +3,32 @@ import cv2
 import time
 import os
 import pickle
+import random
 import pandas as pd
+import numpy as np
 from datetime import datetime
 from ultralytics import YOLO
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoTransformerBase, RTCConfiguration
-import requests
+import requests # <-- ADDED IMPORT
+
+# ------------------------------------------------------------------------------
+# INITIALIZE SESSION STATE (CRITICAL FIX)
+# ------------------------------------------------------------------------------
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "page" not in st.session_state:
+    st.session_state.page = "login"
+if "worker_id" not in st.session_state:
+    st.session_state.worker_id = None
+if "worker_name" not in st.session_state:
+    st.session_state.worker_name = None
+if "detected_live_ppe" not in st.session_state:
+    st.session_state.detected_live_ppe = set()
+if "last_update" not in st.session_state:
+    st.session_state.last_update = 0
+if "force_rerun" not in st.session_state:
+    st.session_state.force_rerun = False
+
 
 # ------------------------------------------------------------------------------
 # PAGE SETUP
@@ -51,9 +72,11 @@ def download_model():
             raise RuntimeError(f"HTTP {r.status_code}")
 
     except Exception as e:
-        st.warning(f"⚠ Model download failed: {e}. Falling back to YOLOv8n.")
+        # Use simple print/log for debugging on cloud console
+        print(f"Model download failed: {e}")
         if os.path.exists(MODEL_PATH):
             os.remove(MODEL_PATH)
+        # st.warning will be called in load_model if it fails
 
 
 # ------------------------------------------------------------------------------
@@ -61,7 +84,9 @@ def download_model():
 # ------------------------------------------------------------------------------
 @st.cache_resource
 def load_model():
-    download_model()
+    # Only call download on the cloud, not during every rerun attempt
+    if os.getenv('STREAMLIT_SERVER_URL'): 
+        download_model()
 
     if os.path.exists(MODEL_PATH):
         try:
@@ -169,14 +194,6 @@ class PPEVideoTransformer(VideoTransformerBase):
         self.HISTORY = 7
         self.frame_counter = 0
 
-        # Initialize session state variables if not exist
-        if "detected_live_ppe" not in st.session_state:
-            st.session_state.detected_live_ppe = set()
-        if "last_update" not in st.session_state:
-            st.session_state.last_update = time.time()
-        if "force_rerun" not in st.session_state:
-            st.session_state.force_rerun = False
-
     def smooth(self, detected):
         self.smoothing_history.append(detected)
         if len(self.smoothing_history) > self.HISTORY:
@@ -192,15 +209,15 @@ class PPEVideoTransformer(VideoTransformerBase):
 
     def run_yolo(self, frame):
         detected = set()
-        # Confidence threshold can be adjusted as needed
-        result = self.model(frame, conf=0.5, verbose=False)[0]
+        # Stable Confidence (0.35)
+        result = self.model(frame, conf=0.35, verbose=False)[0]
         annotated = result.plot()
 
         for box in result.boxes:
             cls = int(box.cls)
             label = self.names.get(cls, "").lower()
             if label in CLASS_TO_PPE:
-                detected.add(CLASS_TO_PPE[label])  # Map label to PPE item
+                detected.add(CLASS_TO_PPE[label])
 
         return detected, annotated
 
@@ -208,21 +225,37 @@ class PPEVideoTransformer(VideoTransformerBase):
         img = frame.to_ndarray(format="bgr24")
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        # Run detection every frame (normal speed)
-        try:
-            raw_detect, annotated = self.run_yolo(rgb)
-        except Exception as e:
-            raw_detect, annotated = set(), rgb
-            print("YOLO error:", e)
+        # Run detection aggressively every 3rd frame, relying on fast UI update
+        if self.frame_counter % 3 == 0:
+            try:
+                raw_detect, annotated = self.run_yolo(rgb)
+            except Exception as e:
+                raw_detect, annotated = set(), rgb
+                print("YOLO error:", e)
 
-        stable_detect = self.smooth(raw_detect)
+            stable_detect = self.smooth(raw_detect)
 
-        # Update session state only if detection changed
-        if stable_detect != st.session_state.detected_live_ppe:
-            st.session_state.detected_live_ppe = stable_detect
-            st.session_state.last_update = time.time()
-            st.session_state.force_rerun = True
+            # --- CRITICAL UI UPDATE SIGNAL ---
+            # If detection results change, update session state and signal UI rerun
+            if stable_detect != st.session_state.detected_live_ppe:
+                st.session_state.detected_live_ppe = stable_detect
+                st.session_state.last_update = time.time()
+                st.session_state.force_rerun = True # Signal UI to update
+            
+            # --- Auto-Log Logic (Added for stability) ---
+            if time.time() - st.session_state.last_update > 5:
+                # Log compliance every 5 seconds if no change, or if a change occurred
+                log_inspection(self.worker_id, self.worker_name, stable_detect)
+                st.session_state.log_message = f"Status logged at {datetime.now().strftime('%H:%M:%S')}."
+                st.session_state.last_update = time.time()
+                st.session_state.force_rerun = True
 
+
+        else:
+            # If not running YOLO, just pass the frame through
+            annotated = rgb
+        
+        self.frame_counter += 1
         return cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
 
 # ------------------------------------------------------------------------------
@@ -319,18 +352,19 @@ def scanner_page():
             async_transform=True,
         )
 
-    # Trigger rerun if transformer signaled a change
+    # --- CRITICAL UI UPDATE CHECK (Aggressive Rerun) ---
+    # We use a slight time.sleep here to prevent instant recursion on fast PCs
+    # and then rely on the force_rerun flag set by the background thread.
     if st.session_state.get("force_rerun", False):
         st.session_state.force_rerun = False
+        time.sleep(0.01) # Short delay to prevent crash
         st.rerun()
 
     with status_col:
         st.markdown("### 📋 PPE Checklist")
 
         detected = st.session_state.get("detected_live_ppe", set())
-        # DEBUG: Show detected PPE items
-        st.write("Detected PPE (stable):", detected)
-
+        
         missing = [it for it in PPE_ITEMS if it not in detected]
 
         checklist = ""
@@ -342,13 +376,18 @@ def scanner_page():
 
         st.markdown(checklist, unsafe_allow_html=True)
 
-        if not detected:
+        if not detected and st.session_state.get("last_update") == 0:
             st.info("Click 'Start Scanner' to begin scanning.")
         elif not missing:
             st.success("✅ FULLY COMPLIANT")
         else:
             st.error("🚨 NON-COMPLIANT")
             st.warning(f"Missing: {', '.join(missing)}")
+            
+        # Display log status
+        if st.session_state.get("log_message"):
+            st.info(st.session_state.log_message)
+
 
 # ------------------------------------------------------------------------------
 # Helper
@@ -360,12 +399,7 @@ def set_page(p):
 # ------------------------------------------------------------------------------
 # MAIN APP
 # ------------------------------------------------------------------------------
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-
-if "page" not in st.session_state:
-    st.session_state.page = "login"
-
+# The main execution block is placed last for structural stability.
 if not st.session_state.logged_in:
     login_page()
 else:
@@ -376,4 +410,3 @@ else:
     else:
         st.session_state.page = "workers"
         st.rerun()
-
