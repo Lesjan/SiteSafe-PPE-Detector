@@ -12,7 +12,7 @@ from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoTransformerBase, 
 import requests
 
 # ------------------------------------------------------------------------------
-# INITIALIZE SESSION STATE (CRITICAL FIX FOR AttributeError)
+# INITIALIZE SESSION STATE 
 # ------------------------------------------------------------------------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
