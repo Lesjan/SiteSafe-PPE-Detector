@@ -276,7 +276,6 @@ def worker_page():
     st.session_state.worker_id = worker_id
     st.session_state.worker_name = worker_name
     st.session_state.page = "scanner"
-    st.session_state.do_rerun = True
 
 
     if st.button("Logout"):
@@ -370,6 +369,7 @@ else:
     else:
         st.session_state.page = "workers"
         st.experimental_rerun()
+
 
 
 
