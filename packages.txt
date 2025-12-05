@@ -1,3 +1,6 @@
+
 libsm6
 libxext6
 libxrender1
+libgl1
+libgtk2.0-dev
