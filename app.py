@@ -235,7 +235,7 @@ def login_page():
             if user in USER_DB and USER_DB[user] == pw:
                 st.session_state.logged_in = True
                 st.session_state.page = "workers"
-                st.experimental_rerun()
+                st.session_state.do_rerun = True  # Set flag instead of rerun immediately
             else:
                 st.error("Invalid username or password.")
 
@@ -256,6 +256,11 @@ def login_page():
                 save_user_db(USER_DB)
                 st.success("Account created. Please sign in.")
 
+# At the very end of your script, after all UI code:
+if st.session_state.get("do_rerun", False):
+    st.session_state.do_rerun = False
+    st.experimental_rerun()
+
 # ------------------------------------------------------------------------------
 # WORKER PAGE
 # ------------------------------------------------------------------------------
@@ -267,11 +272,12 @@ def worker_page():
 
     st.write(f"Selected: **{worker_name}**")
 
-    if st.button("Start Scanner"):
-        st.session_state.worker_id = worker_id
-        st.session_state.worker_name = worker_name
-        st.session_state.page = "scanner"
-        st.experimental_rerun()
+  if st.button("Start Scanner"):
+    st.session_state.worker_id = worker_id
+    st.session_state.worker_name = worker_name
+    st.session_state.page = "scanner"
+    st.session_state.do_rerun = True
+
 
     if st.button("Logout"):
         st.session_state.logged_in = False
@@ -364,6 +370,7 @@ else:
     else:
         st.session_state.page = "workers"
         st.experimental_rerun()
+
 
 
 
