@@ -75,19 +75,28 @@ WORKERS = {
 
 # ------------------ PPE ITEMS ------------------
 PPE_ITEMS = [
-        "Hard Hat", "Safety Vest", "Gloves",
-        "Safety Boots", "Eye/Face Protection",
-        "Hearing Protection", "Safety Harness"
-    ]
+    "Hard Hat",
+    "Safety Vest",
+    "Gloves",
+    "Safety Boots",
+    "Eye/Face Protection",
+    "Hearing Protection",
+    "Safety Harness"
+]
 
 CLASS_TO_PPE = {
-        "hardhat": "Hard Hat", "helmet": "Hard Hat",
-        "vest": "Safety Vest", "glove": "Gloves",
-        "boot": "Safety Boots", "boots": "Safety Boots",
-        "goggles": "Eye/Face Protection", "mask": "Eye/Face Protection",
-        "earmuff": "Hearing Protection", "ear_protection": "Hearing Protection",
-        "harness": "Safety Harness"
-    }
+    "hardhat": "Hard Hat",
+    "helmet": "Hard Hat",
+    "vest": "Safety Vest",
+    "glove": "Gloves",
+    "boot": "Safety Boots",
+    "boots": "Safety Boots",
+    "goggles": "Eye/Face Protection",
+    "mask": "Eye/Face Protection",
+    "earmuff": "Hearing Protection",
+    "ear_protection": "Hearing Protection",
+    "harness": "Safety Harness",
+}
 
 # ------------------ LOGGING ------------------
 def init_log_file():
