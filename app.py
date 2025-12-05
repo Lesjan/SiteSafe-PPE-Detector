@@ -11,34 +11,73 @@ import multiprocessing
 # --- GLOBAL PAGE CONFIGURATION ---
 st.set_page_config(
     page_title="SiteSafe PPE Detector", 
-    layout="wide", 
-    initial_sidebar_state="collapsed" 
-) 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
+# ----------------------
 # PYINSTALLER FIX
+# ----------------------
 if __name__ == '__main__':
     multiprocessing.freeze_support() 
 
+    # ----------------------
     # CONFIG
+    # ----------------------
     LOG_FILE = "ppe_app_logs.csv"
     USER_DB_FILE = "user_credentials.pkl"
     FRAME_SKIP = 3
     AUTO_LOG_INTERVAL = 5 
 
-    # MODEL LOAD
+    # ----------------------
+    # MODEL (YOLO or simulated)
+    # ----------------------
     MODEL_PATH = "best.pt"
     USE_SIMULATED = False
     model = None
+
     try:
         from ultralytics import YOLO
         if os.path.exists(MODEL_PATH):
             model = YOLO(MODEL_PATH)
         else:
             model = YOLO("yolov8n.pt")
-    except Exception:
+    except Exception as e:
         USE_SIMULATED = True
 
-    # PPE AND WORKERS
+    # ----------------------
+    # HANDLERS
+    # ----------------------
+    def go_back():
+        st.session_state.page = "worker"
+        st.session_state.run_camera = False
+        st.rerun() 
+
+    def start_camera_handler():
+        st.session_state.run_camera = True
+
+    def stop_camera_handler():
+        st.session_state.run_camera = False
+        st.rerun() 
+
+    # ----------------------
+    # USER DB helpers
+    # ----------------------
+    def load_user_db():
+        if os.path.exists(USER_DB_FILE):
+            with open(USER_DB_FILE, "rb") as f:
+                return pickle.load(f)
+        return {"admin": "12345"}
+
+    def save_user_db(db):
+        with open(USER_DB_FILE, "wb") as f:
+            pickle.dump(db, f)
+
+    USER_DB = load_user_db()
+
+    # ----------------------
+    # WORKERS & PPE MAPPING
+    # ----------------------
     WORKERS = {
         "CW01": "Jasmin Romon",
         "CW02": "Cordel Kent Corona",
@@ -62,7 +101,9 @@ if __name__ == '__main__':
         "harness": "Safety Harness"
     }
 
+    # ----------------------
     # LOGGING
+    # ----------------------
     def init_log_file():
         if not os.path.exists(LOG_FILE):
             df = pd.DataFrame(columns=["timestamp", "worker_id", "worker_name"] + PPE_ITEMS)
@@ -82,7 +123,9 @@ if __name__ == '__main__':
         df.loc[len(df)] = row
         df.to_csv(LOG_FILE, index=False)
 
+    # ----------------------
     # DETECTION
+    # ----------------------
     def simulated_detect(frame):
         present = set()
         if random.random() > 0.2: present.add("Hard Hat")
@@ -114,34 +157,9 @@ if __name__ == '__main__':
             return simulated_detect(frame)
         return detected
 
-    # USER DB
-    def load_user_db():
-        if os.path.exists(USER_DB_FILE):
-            with open(USER_DB_FILE, "rb") as f:
-                return pickle.load(f)
-        return {"admin": "12345"}
-
-    def save_user_db(db):
-        with open(USER_DB_FILE, "wb") as f:
-            pickle.dump(db, f)
-
-    USER_DB = load_user_db()
-
-    # HANDLERS for camera and navigation
-    def go_back():
-        st.session_state.page = "worker"
-        st.session_state.run_camera = False
-        st.rerun()
-
-    def start_camera_handler():
-        st.session_state.run_camera = True
-
-    def stop_camera_handler():
-        st.session_state.run_camera = False
-        st.rerun()
-
-    # PAGES
-
+    # ----------------------
+    # UI: Login Page
+    # ----------------------
     def login_page():
         st.title("🔐 SiteSafe - Compliance Detector")
         signin, signup = st.tabs(["Sign In", "Sign Up"])
@@ -154,8 +172,7 @@ if __name__ == '__main__':
                 if username in USER_DB and USER_DB[username] == password:
                     st.session_state.logged_in = True
                     st.session_state.user_name = username
-                    st.session_state.page = "worker"
-                    st.rerun()
+                    st.rerun() 
                 else:
                     st.error("Invalid username or password.")
 
@@ -175,72 +192,60 @@ if __name__ == '__main__':
                     USER_DB[new_user] = new_pw
                     save_user_db(USER_DB)
                     st.success("Account created. Please sign in.")
-                    st.rerun()
+                    st.rerun() 
 
+    # ----------------------
+    # UI: Worker page with sidebar
+    # ----------------------
     def worker_page():
-        st.title("👷 SiteSafe - Worker & Supervisor View")
-        st.subheader(f"👋 Logged In User: {st.session_state.get('user_name', 'UNKNOWN')}")
-
-        if st.button("Logout"):
+        st.sidebar.subheader(f"👋 Logged In User: {st.session_state.get('user_name', 'UNKNOWN')}")
+        if st.sidebar.button("Logout"):
             st.session_state.logged_in = False
-            st.session_state.page = "login"
             st.rerun()
 
-        st.markdown("---")
-
+        st.title("👷 SiteSafe - Worker & Supervisor View")
         choice = st.selectbox("Select Worker ID to Inspect", list(WORKERS.keys()))
         worker_name = WORKERS[choice]
         st.write(f"**Worker Name:** {worker_name}")
 
-        def proceed_to_scanner():
+        if st.button("Proceed to PPE Scanner"):
             st.session_state.worker_id = choice
             st.session_state.worker_name = worker_name
             st.session_state.page = "scanner"
             st.session_state.inspection_complete = False
             st.session_state.run_camera = False
-            st.rerun()
+            st.rerun() 
 
-        st.button("Proceed to PPE Scanner", on_click=proceed_to_scanner)
-
+    # ----------------------
+    # UI: Scanner page with sidebar
+    # ----------------------
     def scanner_page():
-        # Hide sidebar button for cleaner UI
-        st.markdown(
-            """
-            <style>
-            [data-testid="stSidebar"] {display: none;}
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
+        st.sidebar.subheader(f"👋 Logged In User: {st.session_state.get('user_name', 'UNKNOWN')}")
+        if st.sidebar.button("Logout"):
+            st.session_state.logged_in = False
+            st.rerun()
+        st.sidebar.button("⬅️ Back", on_click=go_back)
 
         st.title("🎥 Live PPE Scanner")
-
         worker_id = st.session_state.get("worker_id")
         worker_name = st.session_state.get("worker_name")
         st.subheader(f"Target: **{worker_name}** ({worker_id})")
 
-        # Controls in columns
-        col_start, col_stop, col_back = st.columns([1, 1, 1])
-        col_start.button("🟢 Start Scan", key="start_btn", on_click=start_camera_handler, disabled=st.session_state.get("run_camera", False))
-        col_stop.button("🟥 Stop Scan", key="stop_btn", on_click=stop_camera_handler, disabled=not st.session_state.get("run_camera", False))
-        col_back.button("⬅️ Back", key="back_btn", on_click=go_back)
+        col_start, col_stop = st.columns([1,1])
+        with col_start:
+            st.button("🟢 Start Scan", on_click=start_camera_handler, disabled=st.session_state.get("run_camera", False))
+        with col_stop:
+            st.button("🟥 Stop Scan", on_click=stop_camera_handler, disabled=not st.session_state.get("run_camera", False))
 
-        st.markdown("---")
-
-        video_col, status_col = st.columns([2, 1])
-
+        video_col, checklist_col = st.columns([2,1])
         with video_col:
             frame_slot = st.empty()
-            if USE_SIMULATED:
-                st.warning("⚠️ Running in SIMULATED detection mode. Results are random.")
-
-        with status_col:
+        with checklist_col:
             checklist_placeholder = st.empty()
             status_placeholder = st.empty()
             warning_placeholder = st.empty()
 
         run = st.session_state.get("run_camera", False)
-
         if run:
             cap = cv2.VideoCapture(0)
             if not cap.isOpened():
@@ -265,31 +270,31 @@ if __name__ == '__main__':
                     detected = detect_ppe(frame_rgb)
                     missing = [it for it in PPE_ITEMS if it not in detected]
 
-                    # Checklist UI
+                    # ✅ Checklist
                     checklist_text = "### 📋 PPE Checklist\n"
-                    for it in PPE_ITEMS:
-                        if it in detected:
-                            checklist_text += f"**<span style='color:green'>✔ {it}</span>**\n"
+                    for item in PPE_ITEMS:
+                        if item in detected:
+                            checklist_text += f"**<span style='color:green'>✔ {item}</span>**\n"
                         else:
-                            checklist_text += f"**<span style='color:red'>❌ {it}</span>**\n"
+                            checklist_text += f"**<span style='color:red'>❌ {item}</span>**\n"
                     checklist_placeholder.markdown(checklist_text, unsafe_allow_html=True)
 
-                    # Status UI
+                    # ✅ Status
                     if not missing:
-                        status_placeholder.success("✅ **FULLY COMPLIANT**")
+                        status_placeholder.success("✅ FULLY COMPLIANT")
                         warning_placeholder.empty()
                     else:
-                        status_placeholder.error("🚨 **NON-COMPLIANT**")
+                        status_placeholder.error("🚨 NON-COMPLIANT")
                         warning_placeholder.warning(f"Missing: {', '.join(missing)}")
 
-                    # Auto log
+                    # Auto-log
                     now = time.time()
                     if now - last_log > AUTO_LOG_INTERVAL:
                         if not missing and not inspection_complete:
                             log_inspection(worker_id, worker_name, detected)
                             st.session_state.inspection_complete = True
                             st.balloons()
-                            status_placeholder.success("✅ **LOGGED!** Inspection complete.")
+                            status_placeholder.success("✅ LOGGED! Inspection complete.")
                             st.session_state.run_camera = False
                             st.rerun()
                         elif missing and not inspection_complete:
@@ -298,16 +303,16 @@ if __name__ == '__main__':
                         last_log = now
                         st.session_state.last_log_time = last_log
 
-                # Display frame
                 frame_slot.image(frame_rgb, channels="RGB")
                 frame_counter += 1
 
             cap.release()
-
             if not st.session_state.get("run_camera"):
                 st.info("Scan stopped.")
 
-    # MAIN FLOW
+    # ----------------------
+    # MAIN APP FLOW
+    # ----------------------
     if "logged_in" not in st.session_state:
         st.session_state.logged_in = False
     if "page" not in st.session_state:
