@@ -3,13 +3,15 @@ import cv2
 import os
 import pickle
 import pandas as pd
-import time
+import numpy as np
 from datetime import datetime
 from ultralytics import YOLO
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoTransformerBase, RTCConfiguration
 import requests
 
-# ------------------ PAGE SETUP ------------------
+# ------------------------------------------------------------------------
+# PAGE SETUP
+# ------------------------------------------------------------------------
 st.set_page_config(
     page_title="SiteSafe PPE Detector",
     layout="wide",
@@ -21,7 +23,9 @@ USER_DB_FILE = "user_db.pkl"
 MODEL_PATH = "best.pt"
 MODEL_URL = "https://raw.githubusercontent.com/<YOUR_USERNAME>/<YOUR_REPO>/<YOUR_BRANCH>/best.pt"
 
-# ------------------ DOWNLOAD MODEL ------------------
+# ------------------------------------------------------------------------
+# MODEL DOWNLOAD AND LOADING
+# ------------------------------------------------------------------------
 def download_model():
     if os.path.exists(MODEL_PATH) and os.path.getsize(MODEL_PATH) > 1000000:
         return
@@ -31,24 +35,26 @@ def download_model():
         if r.status_code == 200:
             with open(MODEL_PATH, "wb") as f:
                 f.write(r.content)
+        else:
+            st.warning(f"HTTP {r.status_code}, using YOLOv8n fallback")
     except Exception as e:
-        st.warning(f"⚠ Model download failed: {e}")
+        st.warning(f"Model download failed: {e}, using YOLOv8n fallback")
 
-# ------------------ LOAD YOLO MODEL ------------------
 @st.cache_resource
 def load_model():
     download_model()
-    if os.path.exists(MODEL_PATH):
-        try:
+    try:
+        if os.path.exists(MODEL_PATH):
             return YOLO(MODEL_PATH)
-        except Exception as e:
-            st.warning(f"Failed to load best.pt ({e}). Using YOLOv8n.")
-            return YOLO("yolov8n.pt")
-    return YOLO("yolov8n.pt")
+        return YOLO("yolov8n.pt")
+    except:
+        return YOLO("yolov8n.pt")
 
 model = load_model()
 
-# ------------------ USER DATABASE ------------------
+# ------------------------------------------------------------------------
+# USER DATABASE
+# ------------------------------------------------------------------------
 def load_user_db():
     if os.path.exists(USER_DB_FILE):
         try:
@@ -64,7 +70,9 @@ def save_user_db(data):
 
 USER_DB = load_user_db()
 
-# ------------------ WORKERS ------------------
+# ------------------------------------------------------------------------
+# WORKERS
+# ------------------------------------------------------------------------
 WORKERS = {
     "CW01": "Jasmin Romon",
     "CW02": "Cordel Kent Corona",
@@ -73,7 +81,9 @@ WORKERS = {
     "CW05": "Alexis Anne Emata",
 }
 
-# ------------------ PPE ITEMS ------------------
+# ------------------------------------------------------------------------
+# PPE MAPPING
+# ------------------------------------------------------------------------
 PPE_ITEMS = [
     "Hard Hat",
     "Safety Vest",
@@ -98,7 +108,9 @@ CLASS_TO_PPE = {
     "harness": "Safety Harness",
 }
 
-# ------------------ LOGGING ------------------
+# ------------------------------------------------------------------------
+# LOGGING
+# ------------------------------------------------------------------------
 def init_log_file():
     if not os.path.exists(LOG_FILE):
         df = pd.DataFrame(columns=["timestamp", "worker_id", "worker_name"] + PPE_ITEMS)
@@ -115,7 +127,9 @@ def log_inspection(worker_id, worker_name, detected):
     df.loc[len(df)] = row
     df.to_csv(LOG_FILE, index=False)
 
-# ------------------ VIDEO TRANSFORMER ------------------
+# ------------------------------------------------------------------------
+# VIDEO TRANSFORMER
+# ------------------------------------------------------------------------
 class PPEVideoTransformer(VideoTransformerBase):
     def __init__(self, worker_id, worker_name):
         self.worker_id = worker_id
@@ -125,8 +139,8 @@ class PPEVideoTransformer(VideoTransformerBase):
         self.smoothing_history = []
         self.HISTORY = 7
         self.frame_counter = 0
-        st.session_state.detected_live_ppe = set()
-        st.session_state.force_rerun = False
+        if "detected_live_ppe" not in st.session_state:
+            st.session_state.detected_live_ppe = set()
 
     def smooth(self, detected):
         self.smoothing_history.append(detected)
@@ -153,21 +167,21 @@ class PPEVideoTransformer(VideoTransformerBase):
     def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        if self.frame_counter % 1 == 0:  # process every frame
+        if self.frame_counter % 1 == 0:  # every frame
             try:
                 raw_detect, annotated = self.run_yolo(rgb)
-            except Exception:
+            except:
                 raw_detect, annotated = set(), rgb
             stable_detect = self.smooth(raw_detect)
-            if stable_detect != st.session_state.detected_live_ppe:
-                st.session_state.detected_live_ppe = stable_detect
-                st.session_state.force_rerun = True
+            st.session_state.detected_live_ppe = stable_detect
         else:
             annotated = rgb
         self.frame_counter += 1
         return cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
 
-# ------------------ LOGIN PAGE ------------------
+# ------------------------------------------------------------------------
+# LOGIN PAGE
+# ------------------------------------------------------------------------
 def login_page():
     st.title("🔐 SiteSafe PPE Detector")
     tab1, tab2 = st.tabs(["Sign In", "Sign Up"])
@@ -179,7 +193,7 @@ def login_page():
             if user in USER_DB and USER_DB[user] == pw:
                 st.session_state.logged_in = True
                 st.session_state.page = "workers"
-                st.session_state.do_rerun = True
+                st.experimental_rerun()
             else:
                 st.error("Invalid username or password.")
 
@@ -199,23 +213,27 @@ def login_page():
                 save_user_db(USER_DB)
                 st.success("Account created. Please sign in.")
 
-# ------------------ WORKER PAGE ------------------
+# ------------------------------------------------------------------------
+# WORKER PAGE
+# ------------------------------------------------------------------------
 def worker_page():
     st.title("👷 Select Worker for PPE Inspection")
-    worker_id = st.selectbox("Worker ID", list(WORKERS.keys()), key="worker_select")
+    worker_id = st.selectbox("Worker ID", list(WORKERS.keys()))
     worker_name = WORKERS[worker_id]
     st.write(f"Selected: **{worker_name}**")
-    if st.button("Start Scanner", key="start_scanner_btn"):
+    if st.button("Start Scanner", key="start_scanner"):
         st.session_state.worker_id = worker_id
         st.session_state.worker_name = worker_name
         st.session_state.page = "scanner"
-        st.session_state.do_rerun = True
-    if st.button("Logout", key="worker_logout_btn"):
+        st.experimental_rerun()
+    if st.button("Logout", key="logout_worker"):
         st.session_state.logged_in = False
         st.session_state.page = "login"
-        st.session_state.do_rerun = True
+        st.experimental_rerun()
 
-# ------------------ SCANNER PAGE ------------------
+# ------------------------------------------------------------------------
+# SCANNER PAGE
+# ------------------------------------------------------------------------
 def scanner_page():
     st.title("📹 PPE Live Scanner")
     wid = st.session_state.worker_id
@@ -223,6 +241,7 @@ def scanner_page():
     st.subheader(f"Worker: **{wname}** ({wid})")
     st.button("⬅ Back", key="back_btn", on_click=lambda: set_page("workers"))
     video_col, status_col = st.columns([2, 1])
+    checklist_placeholder = status_col.empty()
     with video_col:
         webrtc_streamer(
             key="scanner",
@@ -230,42 +249,42 @@ def scanner_page():
             rtc_configuration=RTCConfiguration(
                 {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
             ),
-            video_transformer_factory=lambda: PPEVideoTransformer(worker_id=wid, worker_name=wname),
+            video_transformer_factory=lambda: PPEVideoTransformer(wid, wname),
             async_transform=True,
         )
-    if st.session_state.get("force_rerun", False):
-        st.session_state.force_rerun = False
-        st.session_state.do_rerun = True
-    with status_col:
-        st.markdown("### 📋 PPE Checklist")
-        detected = st.session_state.get("detected_live_ppe", set())
-        missing = [it for it in PPE_ITEMS if it not in detected]
-        checklist = ""
-        for it in PPE_ITEMS:
-            if it in detected:
-                checklist += f"<span style='color:green'>✔ **{it}**</span><br>"
-            else:
-                checklist += f"<span style='color:red'>❌ **{it}**</span><br>"
-        st.markdown(checklist, unsafe_allow_html=True)
-        if not detected:
-            st.info("Click 'Start' below the video frame to begin scanning.")
-        elif not missing:
-            st.success("✅ FULLY COMPLIANT")
-        else:
-            st.error("🚨 NON-COMPLIANT")
-            st.warning(f"Missing: {', '.join(missing)}")
 
-# ------------------ HELPER ------------------
+    # Live checklist update
+    detected = st.session_state.get("detected_live_ppe", set())
+    missing = [it for it in PPE_ITEMS if it not in detected]
+    checklist_md = ""
+    for it in PPE_ITEMS:
+        if it in detected:
+            checklist_md += f"<span style='color:green'>✔ **{it}**</span><br>"
+        else:
+            checklist_md += f"<span style='color:red'>❌ **{it}**</span><br>"
+    checklist_placeholder.markdown(checklist_md, unsafe_allow_html=True)
+    if not detected:
+        checklist_placeholder.info("Click 'Start' below the video frame to begin scanning.")
+    elif not missing:
+        checklist_placeholder.success("✅ FULLY COMPLIANT")
+    else:
+        checklist_placeholder.error("🚨 NON-COMPLIANT")
+        checklist_placeholder.warning(f"Missing: {', '.join(missing)}")
+
+# ------------------------------------------------------------------------
+# HELPER
+# ------------------------------------------------------------------------
 def set_page(p):
     st.session_state.page = p
+    st.experimental_rerun()
 
-# ------------------ MAIN ------------------
+# ------------------------------------------------------------------------
+# MAIN APP
+# ------------------------------------------------------------------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "page" not in st.session_state:
     st.session_state.page = "login"
-if "do_rerun" not in st.session_state:
-    st.session_state.do_rerun = False
 
 if not st.session_state.logged_in:
     login_page()
@@ -276,9 +295,4 @@ else:
         scanner_page()
     else:
         st.session_state.page = "workers"
-
-if st.session_state.get("do_rerun", False):
-    st.session_state.do_rerun = False
-    st.rerun()
-
-
+        st.experimental_rerun()
