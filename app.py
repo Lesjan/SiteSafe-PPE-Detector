@@ -180,19 +180,22 @@ class PPEVideoTransformer(VideoProcessorBase):
 
     # Using the required recv() method
     def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
-        img = frame.to_ndarray(format="bgr24")
-        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        try:
-            raw_detect, annotated = self.run_yolo(rgb)
-        except Exception as e:
-            # Handle potential exceptions during detection
-            raw_detect, annotated = set(), rgb
+    img = frame.to_ndarray(format="bgr24")
+    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        # Using raw_detect for immediate feedback (smoothing is intentionally bypassed)
-        st.session_state.detected_live_ppe = raw_detect
-        
-        # Return frame using av.VideoFrame.from_ndarray
-        return av.VideoFrame.from_ndarray(cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR), format="bgr24")
+    try:
+        raw_detect, annotated = self.run_yolo(rgb)
+    except:
+        raw_detect, annotated = set(), rgb
+
+    # WRITE DETECTED PPE HERE — unified name
+    st.session_state.detected_ppe = raw_detect
+
+    # Return video frame
+    return av.VideoFrame.from_ndarray(
+        cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR), 
+        format="bgr24"
+    )
 
 # ----- Pages -----
 
@@ -382,3 +385,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
